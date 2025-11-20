@@ -158,7 +158,7 @@ def add_miner_args(cls, parser):
     parser.add_argument(
         "--wandb.project_name",
         type=str,
-        default="template-miners",
+        default="talkhead-subnet-miners",
         help="Wandb project to log to.",
     )
 
@@ -236,7 +236,7 @@ def add_validator_args(cls, parser):
         "--wandb.project_name",
         type=str,
         help="The name of the project where you are sending the new run.",
-        default="template-validators",
+        default="talkhead-subnet-validators",
     )
 
     parser.add_argument(
