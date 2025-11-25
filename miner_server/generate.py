@@ -1,29 +1,47 @@
-from typing import  Optional
+import tempfile
 from pathlib import Path
+from typing import Optional
 
-ROOT = Path(__file__).resolve().parents[1]
-# Put a small sample video here later: data/sample_video.mp4
-SAMPLE_VIDEO_PATH = ROOT / "data" / "sample_video.mp4"
+from gtts import gTTS
+
+from .sadtalker_backend import generate_video_with_sadtalker
+
+
+def _synthesize_speech_gtts(text: str, language: str = "en") -> Path:
+    """
+    TTS using gTTS into a temporary .wav or .mp3 file.
+    SadTalker usually supports .wav, but check docs; here we use .wav.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+
+    tts = gTTS(text=text, lang=language)
+    tts.save(tmp.name)
+    return Path(tmp.name)
 
 
 def generate_talking_head(
     image_bytes: bytes,
     script: str,
     duration_sec: Optional[float] = None,
+    language: str = "en",
 ) -> bytes:
     """
-    Core generation stub.
+    New generation path:
 
-    Later: run TTS + talking-head model here.
+      1. Script -> TTS (gTTS) -> audio.wav
+      2. Image bytes + audio.wav -> SadTalker -> talking-head MP4
 
-    For now: return the bytes of a placeholder MP4 file so
-    the API and validator plumbing can be built & tested.
+    The outer API (miner HTTP API) stays the same.
     """
-    if not SAMPLE_VIDEO_PATH.exists():
-        # For now, just clearly fail if you forgot to add sample video.
-        raise FileNotFoundError(
-            f"Placeholder video not found at {SAMPLE_VIDEO_PATH}. "
-            "Drop a small .mp4 there or implement real generation."
-        )
+    # 1. TTS
+    audio_path = _synthesize_speech_gtts(script, language=language)
 
-    return SAMPLE_VIDEO_PATH.read_bytes()
+    # 2. SadTalker
+    video_bytes = generate_video_with_sadtalker(
+        image_bytes=image_bytes,
+        audio_path=audio_path,
+        duration_sec=duration_sec,
+    )
+
+    return video_bytes

@@ -43,7 +43,7 @@ class GenerateResponse(BaseModel):
 
 def _load_image_bytes_from_url(url: str) -> bytes:
     try:
-        resp = requests.get(url, timeout=5)
+        resp = requests.get(url, timeout=20)
         resp.raise_for_status()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to download image: {e}")
@@ -131,6 +131,8 @@ if __name__ == "__main__":
     # test the API
     response = requests.post("http://localhost:9000/generate", json={
         "script": "Hello, world!",
-        "image_url": "https://www.google.com/images/branding/googlelogo/1x/googlelogo_color_272x92dp.png",
+        "image_url": "https://i.postimg.cc/1tj4SZbT/cute.jpg",
     })
-    print(response.json())
+    with open(f"cute.mp4", "wb") as f:
+        f.write(base64.b64decode(response.json()["video_base64"]))
+    print(f"ok: {response.json()['ok']}, error_code: {response.json()['error_code']}, error_message: {response.json()['error_message']}")
