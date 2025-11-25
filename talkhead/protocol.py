@@ -39,37 +39,39 @@ import bittensor as bt
 #   assert dummy_output == 2
 
 
-class Dummy(bt.Synapse):
+class TalkHeadSynapse(bt.Synapse):
     """
-    A simple dummy protocol representation which uses bt.Synapse as its base.
-    This protocol helps in handling dummy request and response communication between
-    the miner and the validator.
+    TalkHeadSynapse is a specialized implementation of the `Synapse` class tailored for the TalkHead network.
+    It is designed to handle the specific data formats and requirements of the TalkHead network, including
+    image, text, and video data.
 
     Attributes:
-    - dummy_input: An integer value representing the input request sent by the validator.
-    - dummy_output: An optional integer value which, when filled, represents the response from the miner.
+    - image: A bytes object representing the image input request sent by the validator.
+    - text: A string representing the text input request sent by the validator.
+    - video: A bytes object representing the video output response from the miner.
     """
 
     # Required request input, filled by sending dendrite caller.
-    dummy_input: int
+    image: bytes
+    text: str
 
     # Optional request output, filled by receiving axon.
-    dummy_output: typing.Optional[int] = None
+    video: bytes
 
-    def deserialize(self) -> int:
+    def deserialize(self) -> bytes:
         """
-        Deserialize the dummy output. This method retrieves the response from
-        the miner in the form of dummy_output, deserializes it and returns it
+        Deserialize the TalkHeadSynapse output. This method retrieves the response from
+        the miner in the form of video, deserializes it and returns it
         as the output of the dendrite.query() call.
 
         Returns:
-        - int: The deserialized response, which in this case is the value of dummy_output.
+        - video: The deserialized response, which in this case is the value of video.
 
         Example:
-        Assuming a Dummy instance has a dummy_output value of 5:
-        >>> dummy_instance = Dummy(dummy_input=4)
-        >>> dummy_instance.dummy_output = 5
-        >>> dummy_instance.deserialize()
-        5
+        Assuming a TalkHeadSynapse instance has a video value of 5:
+        >>> talkhead_synapse = TalkHeadSynapse(image=image, text=text)
+        >>> talkhead_synapse.video = video
+        >>> talkhead_synapse.deserialize()
+        video
         """
-        return self.dummy_output
+        return self.video
