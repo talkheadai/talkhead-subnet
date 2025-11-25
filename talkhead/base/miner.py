@@ -23,8 +23,8 @@ import traceback
 
 import bittensor as bt
 
-from template.base.neuron import BaseNeuron
-from template.utils.config import add_miner_args
+from talkhead.base.neuron import BaseNeuron
+from talkhead.utils.config import add_miner_args
 
 from typing import Union
 

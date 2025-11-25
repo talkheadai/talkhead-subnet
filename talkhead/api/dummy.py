@@ -19,18 +19,18 @@
 
 import bittensor as bt
 from typing import List, Optional, Union, Any, Dict
-from template.protocol import Dummy
-from bittensor.subnets import SubnetsAPI
+from talkhead.protocol import TalkHeadSynapse
+from talkhead.subnet_links import SubnetsAPI
 
 
 class DummyAPI(SubnetsAPI):
     def __init__(self, wallet: "bt.wallet"):
         super().__init__(wallet)
-        self.netuid = 33
-        self.name = "dummy"
+        self.netuid = 21
+        self.name = "talkhead"
 
-    def prepare_synapse(self, dummy_input: int) -> Dummy:
-        synapse.dummy_input = dummy_input
+    def prepare_synapse(self, image: bytes, text: str) -> TalkHeadSynapse:
+        synapse = TalkHeadSynapse(image=image, text=text)
         return synapse
 
     def process_responses(
