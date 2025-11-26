@@ -110,41 +110,18 @@ def _sample_frames(video_path: Path, max_frames: int = 32) -> list[np.ndarray]:
     cap.release()
     return frames
 
-
 def score_sync(video_path: Path) -> float:
     """
-    Very simple motion-based 'sync' proxy:
-    - Measure average frame-to-frame difference in grayscale.
-    - Return score in [0,1] where:
-        0  ~ almost no motion (likely static image)
-        1  ~ reasonable motion (talking/head movement)
-    This does NOT check audio correlation yet, but it detects
-    'static thumbnail over audio' cheating.
+    Lip-sync score using SyncNet:
+      0.0 ~ badly out-of-sync / unusable
+      1.0 ~ very well-synced according to SyncNet
     """
-    frames = _sample_frames(video_path, max_frames=32)
-    if len(frames) < 2:
+    try:
+        return compute_lip_sync_score(video_path)
+    except Exception as e:
+        # Don't crash scoring if SyncNet fails on a weird video; just downscore.
+        # You can also log `e` here.
         return 0.0
-
-    prev_gray = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
-    diffs = []
-
-    for frame in frames[1:]:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        diff = cv2.absdiff(gray, prev_gray)
-        mean_diff = float(diff.mean())  # 0-255
-        diffs.append(mean_diff)
-        prev_gray = gray
-
-    if not diffs:
-        return 0.0
-
-    avg_motion = float(np.mean(diffs))
-
-    # Heuristic: map motion [0, 20] → [0,1], clamp
-    # (tune 20 based on your outputs; it’s a reasonable starting point)
-    motion_score = np.clip(avg_motion / 20.0, 0.0, 1.0)
-    return float(motion_score)
-
 
 def score_face(video_path: Path) -> float:
     """
