@@ -5,9 +5,10 @@ from typing import Optional
 
 import cv2
 import numpy as np
-
+import soundfile as sf  # NEW
 from .media_utils import probe_duration, extract_audio
 from .asr import transcribe_audio
+from .quality_backend import score_audio_quality, _sample_frames, _compute_motion_and_freeze
 from .lipsync_backend import compute_lip_sync_score
 from .faceid_backend import compute_face_identity_score
 
@@ -41,7 +42,6 @@ def _text_similarity(a: str, b: str) -> float:
     """
     return difflib.SequenceMatcher(None, a, b).ratio()
 
-
 def score_script(script: str, language: str, video_path: Path) -> float:
     audio_path = extract_audio(video_path)
     if audio_path is None:
@@ -53,7 +53,6 @@ def score_script(script: str, language: str, video_path: Path) -> float:
 
     ref = script.strip().lower()
     return _text_similarity(ref, recognized)
-
 
 def score_duration(
     video_path: Path,
@@ -83,35 +82,6 @@ def score_duration(
 def score_latency(latency_ms: float, cap_ms: float = 10_000.0) -> float:
     return max(0.0, 1.0 - latency_ms / cap_ms)
 
-def _sample_frames(video_path: Path, max_frames: int = 32) -> list[np.ndarray]:
-    """
-    Sample up to max_frames frames evenly from the video.
-    Returns list of BGR images (as numpy arrays).
-    """
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        return []
-
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    if frame_count <= 0:
-        cap.release()
-        return []
-
-    step = max(1, frame_count // max_frames)
-    frames = []
-    idx = 0
-    while True:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frames.append(frame)
-        if len(frames) >= max_frames:
-            break
-        idx += step
-
-    cap.release()
-    return frames
 
 def score_sync(video_path: Path) -> float:
     """
@@ -146,9 +116,11 @@ def score_face(video_path: Path, ref_face_path: Optional[Path]) -> float:
 def score_quality(video_path: Path) -> float:
     """
     Basic perceptual quality score in [0,1], combining:
-    - sharpness (Laplacian variance)
-    - brightness (mean intensity)
-    - motion (reusing motion index)
+      - visual sharpness (Laplacian variance)
+      - brightness (mean intensity)
+      - motion amount (some movement is good)
+      - freeze ratio (long static segments are bad)
+      - audio quality (loudness, silence, clipping)
     """
     frames = _sample_frames(video_path, max_frames=32)
     if not frames:
@@ -168,36 +140,49 @@ def score_quality(video_path: Path) -> float:
         brightness = float(gray.mean())
         bright_vals.append(brightness)
 
-    # Aggregate
     avg_sharp = float(np.mean(sharp_vals))
     avg_bright = float(np.mean(bright_vals))
 
-    # Map sharpness to [0,1] with heuristic thresholds
+    # Map sharpness to [0,1]
     #  - below 50: very blurry -> 0
-    #  - 50-300: ramp up to 1
+    #  - 50-300: ramp to 1
     #  - >300: cap at 1
-    if avg_sharp <= 50:
+    if avg_sharp <= 50.0:
         S_sharp = 0.0
-    elif avg_sharp >= 300:
+    elif avg_sharp >= 300.0:
         S_sharp = 1.0
     else:
         S_sharp = (avg_sharp - 50.0) / (300.0 - 50.0)
 
     # Map brightness to [0,1], prefer roughly [60, 200]
-    if avg_bright <= 20 or avg_bright >= 235:
+    if avg_bright <= 20.0 or avg_bright >= 235.0:
         S_bright = 0.0
-    elif 60 <= avg_bright <= 200:
+    elif 60.0 <= avg_bright <= 200.0:
         S_bright = 1.0
-    elif avg_bright < 60:
+    elif avg_bright < 60.0:
         S_bright = (avg_bright - 20.0) / (60.0 - 20.0)
-    else:  # >200
+    else:  # > 200
         S_bright = (235.0 - avg_bright) / (235.0 - 200.0)
 
-    # Motion index from score_sync (reuse so we don’t duplicate work too much)
-    S_motion = score_sync(video_path)
+    # Motion + freeze
+    avg_motion, freeze_ratio = _compute_motion_and_freeze(frames)
+    # Map motion [0, 20] -> [0,1], clamp
+    S_motion = float(np.clip(avg_motion / 20.0, 0.0, 1.0))
+    # Freeze score: 1 when no frozen pairs, 0 when all pairs frozen
+    S_freeze = float(np.clip(1.0 - freeze_ratio, 0.0, 1.0))
 
-    # Combine: weight sharpness + brightness + motion
-    S_quality = 0.4 * S_sharp + 0.3 * S_bright + 0.3 * S_motion
+    # Audio quality
+    S_audio = score_audio_quality(video_path)
+
+    # Combine: tweak weights as you like
+    S_quality = (
+        0.3 * S_sharp    # detail / blur
+        + 0.15 * S_bright  # not too dark/bright
+        + 0.15 * S_motion  # some movement
+        + 0.15 * S_freeze  # no long freezes
+        + 0.25 * S_audio   # sound is important
+    )
+
     return float(np.clip(S_quality, 0.0, 1.0))
 
 
