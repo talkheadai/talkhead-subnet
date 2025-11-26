@@ -1,0 +1,91 @@
+import base64
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Optional
+import cv2
+import numpy as np
+
+
+def save_video_base64_to_temp(video_b64: str, suffix: str = ".mp4") -> Path:
+    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+    tmp.write(base64.b64decode(video_b64))
+    tmp.flush()
+    tmp.close()
+    return Path(tmp.name)
+
+
+def probe_duration(video_path: Path) -> Optional[float]:
+    """
+    Use ffprobe to get video duration in seconds.
+    Returns None on error.
+    """
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(video_path),
+    ]
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        return float(out.decode().strip())
+    except Exception:
+        return None
+
+
+def extract_audio(video_path: Path) -> Optional[Path]:
+    """
+    Extract audio to a temporary WAV file using ffmpeg.
+    Returns Path or None on error.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp_path = Path(tmp.name)
+    tmp.close()
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i", str(video_path),
+        "-vn",
+        "-acodec", "pcm_s16le",
+        "-ar", "16000",
+        "-ac", "1",
+        str(tmp_path),
+    ]
+    try:
+        subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        return tmp_path
+    except Exception:
+        return None
+
+
+def _sample_frames(video_path: Path, max_frames: int = 32) -> list[np.ndarray]:
+    """
+    Sample up to max_frames frames evenly from the video.
+    Returns list of BGR images (as numpy arrays).
+    """
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return []
+
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    if frame_count <= 0:
+        cap.release()
+        return []
+
+    step = max(1, frame_count // max_frames)
+    frames = []
+    idx = 0
+    while True:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frames.append(frame)
+        if len(frames) >= max_frames:
+            break
+        idx += step
+
+    cap.release()
+    return frames

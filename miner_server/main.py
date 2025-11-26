@@ -130,9 +130,10 @@ def generate(req: GenerateRequest) -> GenerateResponse:
 if __name__ == "__main__":
     # test the API
     response = requests.post("http://localhost:9000/generate", json={
-        "script": "Hello, world!",
-        "image_url": "https://i.postimg.cc/1tj4SZbT/cute.jpg",
+        "script": "TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars. This subnet incentivizes miners to produce realistic, synchronized talking head videos from audio input and reference images, enabling applications in virtual avatars, video generation, and AI-driven content creation.",
+        # "image_url": "https://i.postimg.cc/1tj4SZbT/cute.jpg",
+        "image_url": "https://i.postimg.cc/DyH90PGg/hat.jpg",
     })
-    with open(f"cute.mp4", "wb") as f:
+    with open(f"hat.mp4", "wb") as f:
         f.write(base64.b64decode(response.json()["video_base64"]))
     print(f"ok: {response.json()['ok']}, error_code: {response.json()['error_code']}, error_message: {response.json()['error_message']}")

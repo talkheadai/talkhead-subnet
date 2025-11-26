@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "talkhead-scoring-server"
+version = "0.1.0"
+description = "FastAPI scoring server for the TalkHead subnet."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "TalkHead Subnet Team" }
+]
+dependencies = [
+  "fastapi==0.122.0",
+  "pydantic==2.12.4",
+  "uvicorn==0.38.0",
+  "requests==2.32.5",
+  "numpy==1.24.0",
+  "opencv-python==4.7.0.72",
+  "soundfile==0.13.1",
+  "torch==2.0.0",
+  "syncnet-python==0.2.2",
+  "insightface==0.7.3",
+  "onnxruntime==1.19.0",
+  "openai-whisper==20250625"
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.0.1"]
+gpu = [
+  "onnxruntime-gpu==1.19.0",
+  "nvidia-cuda-runtime-cu12==12.6.37"
+]
+
+[project.urls]
+Homepage = "https://github.com/opentensor/talkhead-subnet"
+Issues = "https://github.com/opentensor/talkhead-subnet/issues"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["scoring_server*"]
+
+[tool.setuptools.package-data]
+scoring_server = ["syncnet/*"]
+
