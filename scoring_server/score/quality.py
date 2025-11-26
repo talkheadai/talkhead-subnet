@@ -1,38 +1,8 @@
-from media_utils import extract_audio
+from utils.media import extract_audio, _sample_frames, probe_duration
 import soundfile as sf
 import numpy as np
 from pathlib import Path
 import cv2
-
-def _sample_frames(video_path: Path, max_frames: int = 32) -> list[np.ndarray]:
-    """
-    Sample up to max_frames frames evenly from the video.
-    Returns list of BGR images (as numpy arrays).
-    """
-    cap = cv2.VideoCapture(str(video_path))
-    if not cap.isOpened():
-        return []
-
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    if frame_count <= 0:
-        cap.release()
-        return []
-
-    step = max(1, frame_count // max_frames)
-    frames = []
-    idx = 0
-    while True:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frames.append(frame)
-        if len(frames) >= max_frames:
-            break
-        idx += step
-
-    cap.release()
-    return frames
 
 def _compute_motion_and_freeze(frames: list[np.ndarray]) -> tuple[float, float]:
     """

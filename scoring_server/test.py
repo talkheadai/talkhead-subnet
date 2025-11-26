@@ -1,5 +1,5 @@
-from scoring import evaluate_miner, MinerEvalInput
-from scoring import score_sync, score_face, score_quality
+from score.score import evaluate_miner, MinerEvalInput
+from score.score import score_sync, score_face, score_quality
 from pathlib import Path
 
 testing_cases = [

@@ -32,8 +32,8 @@ so any code changes are picked up immediately without reinstalling.
 ## Download weight files
 
 ```bash
-wget https://huggingface.co/lithiumice/syncnet/blob/main/sfd_face.pth -P syncnet
-wget https://huggingface.co/lithiumice/syncnet/blob/main/syncnet_v2.model -P syncnet
+wget https://huggingface.co/lithiumice/syncnet/blob/main/sfd_face.pth -P score/syncnet
+wget https://huggingface.co/lithiumice/syncnet/blob/main/syncnet_v2.model -P score/syncnet
 ```
 
 ## Running the API

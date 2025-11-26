@@ -8,8 +8,8 @@ import requests  # optional if you later call other services; ok to keep
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from scoring_server.media_utils import save_video_base64_to_temp
-from scoring_server.scoring import (
+from utils.media import save_video_base64_to_temp
+from score.score import (
     MinerEvalInput,
     MinerEvalScores,
     evaluate_miner,
@@ -116,16 +116,6 @@ def score(req: ScoreRequest) -> ScoreResponse:
     )
 
 if __name__ == "__main__":
-    # test the API
-    import json
-    response = requests.post("http://localhost:8100/score", json={
-        "script": "TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars. This subnet incentivizes miners to produce realistic, synchronized talking head videos from audio input and reference images, enabling applications in virtual avatars, video generation, and AI-driven content creation.",
-        # "image_url": "https://i.postimg.cc/1tj4SZbT/cute.jpg",
-        "image_url": "https://i.postimg.cc/DyH90PGg/hat.jpg",
-        "latency_ms": 1000,
-        "target_duration_sec": 24.0,
-        "video_base64": base64.b64encode(open("hat.mp4", "rb").read()).decode("ascii"),
-        "miner_id": "test",
-        "challenge_id": "test",
-    })
-    print(json.dumps(response.json(), indent=4))
+    # run uvicorn main:app --reload
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8100, reload=True)
