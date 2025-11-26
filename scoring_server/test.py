@@ -1,5 +1,5 @@
-from scoring_server.scoring import evaluate_miner, MinerEvalInput
-from scoring_server.scoring import score_sync, score_face, score_quality
+from scoring import evaluate_miner, MinerEvalInput
+from scoring import score_sync, score_face, score_quality
 from pathlib import Path
 
 testing_cases = [
@@ -18,14 +18,14 @@ if __name__ == "__main__":
                 script="TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars.",
                 language="en-US",
                 latency_ms=1000,
-                video_path=Path("test_data/cute.mp4"),
+                video_path=Path("../test_data/talker.mp4"),
                 target_duration_sec=8.0,
-                ref_face_path=Path("test_data/talker.jpg"),
+                ref_face_path=Path("../test_data/talker.jpg"),
             ))
             print(scores)
         if case == 2:
-            print(score_sync(Path("test_data/hat.mp4")))
+            print(score_sync(Path("../test_data/hat.mp4")))
         if case == 3:
-            print(score_face(Path("test_data/cute.jpg"), Path("test_data/cute.mp4")))
+            print(score_face(Path("../test_data/cute.jpg"), Path("../test_data/cute.mp4")))
         if case == 4:
-            print(score_quality(Path("test_data/hat.mp4")))
+            print(score_quality(Path("../test_data/hat.mp4")))

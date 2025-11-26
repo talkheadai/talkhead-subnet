@@ -1,4 +1,4 @@
-from .media_utils import extract_audio
+from media_utils import extract_audio
 import soundfile as sf
 import numpy as np
 from pathlib import Path

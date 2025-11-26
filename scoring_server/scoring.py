@@ -6,11 +6,11 @@ from typing import Optional
 import cv2
 import numpy as np
 import soundfile as sf  # NEW
-from .media_utils import probe_duration, extract_audio
-from .asr import transcribe_audio
-from .quality_backend import score_audio_quality, _sample_frames, _compute_motion_and_freeze
-from .lipsync_backend import compute_lip_sync_score
-from .faceid_backend import compute_face_identity_score
+from media_utils import probe_duration, extract_audio
+from asr import transcribe_audio
+from quality_backend import score_audio_quality, _sample_frames, _compute_motion_and_freeze
+from lipsync_backend import compute_lip_sync_score
+from faceid_backend import compute_face_identity_score
 
 @dataclass
 class MinerEvalInput:
