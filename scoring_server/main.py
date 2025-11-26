@@ -28,13 +28,15 @@ class ScoreRequest(BaseModel):
     latency_ms: float
     target_duration_sec: float = 8.0
 
-    # Video payload (base64-encoded mp4)
     video_base64: str
 
     # Optional metadata
     miner_id: Optional[str] = None
     challenge_id: Optional[str] = None
 
+    # NEW: reference face (from challenge)
+    ref_face_url: Optional[str] = None
+    ref_face_base64: Optional[str] = None
 
 class ScoreResponse(BaseModel):
     ok: bool

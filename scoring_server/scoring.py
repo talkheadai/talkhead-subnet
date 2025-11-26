@@ -8,6 +8,8 @@ import numpy as np
 
 from .media_utils import probe_duration, extract_audio
 from .asr import transcribe_audio
+from .lipsync_backend import compute_lip_sync_score
+from .faceid_backend import compute_face_identity_score
 
 @dataclass
 class MinerEvalInput:
@@ -16,7 +18,8 @@ class MinerEvalInput:
     language: str
     latency_ms: float
     video_path: Path
-    target_duration_sec: float = 8.0  # can come from challenge
+    target_duration_sec: float = 8.0
+    ref_face_path: Path | None = None     # <-- add this
 
 
 @dataclass
@@ -123,40 +126,22 @@ def score_sync(video_path: Path) -> float:
         # You can also log `e` here.
         return 0.0
 
-def score_face(video_path: Path) -> float:
+def score_face(video_path: Path, ref_face_path: Optional[Path]) -> float:
     """
-    Face-presence score in [0,1]:
-    - Use Haar cascade to detect face in sampled frames.
-    - Score = fraction of frames where at least one face is detected.
-    This checks 'does the video actually show a face most of the time'.
+    Face identity consistency:
+      - if ref_face_path is provided: use embedding-based identity check
+      - else: fallback to simple 'face presence' via Haar (or 0.5).
     """
-    frames = _sample_frames(video_path, max_frames=32)
-    if not frames:
-        return 0.0
-
-    face_cascade = cv2.CascadeClassifier(
-        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-    )
-    if face_cascade.empty():
-        # If cascade missing for some reason, don't crash; just return 0.5
+    if ref_face_path is None:
+        # fallback: we don't know the reference → can't judge identity
+        # you can replace this with simple presence score if you want
         return 0.5
 
-    face_frames = 0
-    for frame in frames:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(
-            gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(64, 64),
-        )
-        if len(faces) > 0:
-            face_frames += 1
-
-    score = face_frames / len(frames)
-    # small floor to avoid punishing occasional detector misses too hard
-    return float(np.clip(score, 0.0, 1.0))
-
+    try:
+        return compute_face_identity_score(ref_face_path, video_path)
+    except Exception:
+        # don't kill scoring if identity model fails
+        return 0.0
 
 def score_quality(video_path: Path) -> float:
     """
@@ -224,7 +209,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
 
     # stubs for now
     S_sync = score_sync(e.video_path)
-    S_face = score_face(e.video_path)
+    S_face = score_face(e.video_path, e.ref_face_path)
     S_quality = score_quality(e.video_path)
 
     # weights (v1)
