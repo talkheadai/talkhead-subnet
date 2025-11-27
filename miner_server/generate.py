@@ -4,7 +4,7 @@ from typing import Optional
 
 from gtts import gTTS
 
-from .sadtalker_backend import generate_video_with_sadtalker
+from sadtalker_backend import generate_video_with_sadtalker
 
 
 def _synthesize_speech_gtts(text: str, language: str = "en") -> Path:

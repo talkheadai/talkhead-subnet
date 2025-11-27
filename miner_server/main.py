@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from PIL import Image
 
-from miner_server.generate import generate_talking_head
+from generate import generate_talking_head
 
 
 app = FastAPI(title="TalkHead Miner HTTP API")
@@ -129,11 +129,12 @@ def generate(req: GenerateRequest) -> GenerateResponse:
 
 if __name__ == "__main__":
     # test the API
-    response = requests.post("http://localhost:9000/generate", json={
-        "script": "TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars. This subnet incentivizes miners to produce realistic, synchronized talking head videos from audio input and reference images, enabling applications in virtual avatars, video generation, and AI-driven content creation.",
+    response = generate(GenerateRequest(
+        script = "TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars. ",
         # "image_url": "https://i.postimg.cc/1tj4SZbT/cute.jpg",
-        "image_url": "https://i.postimg.cc/DyH90PGg/hat.jpg",
-    })
-    with open(f"hat.mp4", "wb") as f:
-        f.write(base64.b64decode(response.json()["video_base64"]))
-    print(f"ok: {response.json()['ok']}, error_code: {response.json()['error_code']}, error_message: {response.json()['error_message']}")
+        # image_url = "https://i.postimg.cc/DyH90PGg/hat.jpg",
+        image_url = "https://i.postimg.cc/kGFtf6Ys/talker.jpg"
+    ))
+    print(f"ok: {response.ok}, error_code: {response.error_code}, error_message: {response.error_message}")
+    with open(f"../test_data/talker.mp4", "wb") as f:
+        f.write(base64.b64decode(response.video_base64))
