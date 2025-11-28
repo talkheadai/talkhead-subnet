@@ -52,11 +52,11 @@ class TalkHeadSynapse(bt.Synapse):
     """
 
     # Required request input, filled by sending dendrite caller.
-    image: bytes
+    image_base64: str
     text: str
 
     # Optional request output, filled by receiving axon.
-    video: bytes
+    video: typing.Optional[bytes] = None
 
     def deserialize(self) -> bytes:
         """

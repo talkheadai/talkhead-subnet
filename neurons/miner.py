@@ -58,7 +58,8 @@ class Miner(BaseMinerNeuron):
         the miner's intended operation. This method demonstrates a basic transformation of input data.
         """
         # TODO(developer): Replace with actual implementation logic.
-        image_size = len(synapse.image) if synapse.image else 0
+        bt.logging.info(f"Received synapse text: {synapse.text}")
+        image_size = len(synapse.image_base64) if synapse.image_base64 else 0
         text_value = synapse.text or ""
         text_summary = (
             text_value[:64] + "..." if len(text_value) > 64 else text_value
@@ -119,6 +120,8 @@ class Miner(BaseMinerNeuron):
             )
             return True, "Unrecognized hotkey"
 
+        if synapse.dendrite.hotkey == '5HghmK98GFaAUQruKDKUAcNdjtvGAPsNbyBduznmcJRj2Rfj':
+            return False, "Developer Hotkey for testing"
         if self.config.blacklist.force_validator_permit:
             # If the config is set to force validator permit, then we should only allow requests from validators.
             if not self.metagraph.validator_permit[uid]:

@@ -23,7 +23,9 @@ import bittensor as bt
 from talkhead.protocol import TalkHeadSynapse
 from talkhead.validator.reward import get_rewards
 from talkhead.utils.uids import get_random_uids
-
+from talkhead.constants import TALKHEAD_SERVER_ENDPOINT
+import requests
+import base64
 
 async def forward(self):
     """
@@ -37,25 +39,29 @@ async def forward(self):
     """
     # TODO(developer): Define how the validator selects a miner to query, how often, etc.
     # get_random_uids is an example method, but you can replace it with your own.
-    miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+    # miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+    miner_uids = [219]
 
-    # Generate a random image and text for the query.
-    image = np.random.randint(0, 255, (224, 224, 3)).tobytes()
-    text = "Hello, world!"
+    # Fetch the challenge from the talkhead server
+    response = requests.get(TALKHEAD_SERVER_ENDPOINT + "/challenge")
+    challenge = response.json()
 
     # The dendrite client queries the network.
     responses = await self.dendrite(
         # Send the query to selected miner axons in the network.
         axons=[self.metagraph.axons[uid] for uid in miner_uids],
         # Construct a dummy query. This simply contains a single integer.
-        synapse=TalkHeadSynapse(image=image, text=text),
+        synapse=TalkHeadSynapse(image_base64=challenge["image_base64"], text=challenge["text"]),
         # All responses have the deserialize function called on them before returning.
         # You are encouraged to define your own deserialization function.
-        deserialize=True,
+        deserialize=False,
     )
 
     # Log the results for monitoring purposes.
-    bt.logging.info(f"Received responses: {responses}")
+    bt.logging.info(f"Received responses count: {len(responses)}")
+    for response in responses:
+        bt.logging.info(f"Response text: {response.text}")
+        bt.logging.info(f"Response video: {response.video}")
 
     # TODO(developer): Define how the validator scores responses.
     # Adjust the scores based on responses from miners.
