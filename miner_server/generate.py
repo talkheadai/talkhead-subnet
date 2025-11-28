@@ -22,20 +22,20 @@ def _synthesize_speech_gtts(text: str, language: str = "en") -> Path:
 
 def generate_talking_head(
     image_bytes: bytes,
-    script: str,
-    duration_sec: Optional[float] = None,
+    text: str,
     language: str = "en",
+    duration_sec: Optional[float] = None,
 ) -> bytes:
     """
     New generation path:
 
-      1. Script -> TTS (gTTS) -> audio.wav
+      1. Text -> TTS (gTTS) -> audio.wav
       2. Image bytes + audio.wav -> SadTalker -> talking-head MP4
 
     The outer API (miner HTTP API) stays the same.
     """
     # 1. TTS
-    audio_path = _synthesize_speech_gtts(script, language=language)
+    audio_path = _synthesize_speech_gtts(text, language=language)
 
     # 2. SadTalker
     video_bytes = generate_video_with_sadtalker(

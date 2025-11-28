@@ -5,11 +5,16 @@ from pathlib import Path
 
 import requests
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, HttpUrl, Field
 from PIL import Image
 
 from generate import generate_talking_head
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+MINER_SERVER_PORT = int(os.getenv("MINER_SERVER_PORT", 9000))
+RUN_MODE = os.getenv("RUN_MODE", "prod")
 
 app = FastAPI(title="TalkHead Miner HTTP API")
 
@@ -17,26 +22,26 @@ app = FastAPI(title="TalkHead Miner HTTP API")
 # ---------- Request / Response models ---------- #
 
 class GenerateRequest(BaseModel):
-    script: str
+    text: str = Field(..., description="The text to generate a talking head for.")
 
     # One of these must be provided:
-    image_url: Optional[HttpUrl] = None
-    image_base64: Optional[str] = None
+    image_url: Optional[HttpUrl] = Field(None, description="The URL of the image to use for the talking head.")
+    image_base64: Optional[str] = Field(None, description="The base64 encoded image to use for the talking head.")
 
     # Optional hints:
-    language: str = "en-US"
-    voice_profile: str = "neutral"
-    duration_sec: Optional[float] = 8.0
+    language: str = Field("en-US", description="The language to use for the talking head.")
+    voice_profile: str = Field("neutral", description="The voice profile to use for the talking head.")
+    duration_sec: Optional[float] = Field(8.0, description="The duration of the talking head in seconds.")
 
 
 class GenerateResponse(BaseModel):
-    ok: bool
-    error_code: Optional[str]
-    error_message: Optional[str]
+    ok: bool = Field(..., description="Whether the generation was successful.")
+    error_code: Optional[str] = Field(None, description="The error code if the generation was not successful.")
+    error_message: Optional[str] = Field(None, description="The error message if the generation was not successful.")
 
     # Base64-encoded video bytes for now (you can switch to streaming/url later)
-    video_base64: Optional[str]
-    mime_type: Literal["video/mp4"] = "video/mp4"
+    video_base64: Optional[str] = Field(None, description="The base64 encoded video bytes for the talking head.")
+    mime_type: Literal["video/mp4"] = Field("video/mp4", description="The mime type of the video.")
 
 
 # ---------- Helper functions ---------- #
@@ -71,13 +76,16 @@ def _validate_image(image_bytes: bytes) -> bytes:
 
 
 # ---------- Routes ---------- #
+@app.get("/")
+def health() -> dict[str, str]:
+    return {"message": "server is alive and ready to generate!"}
 
 @app.post("/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest) -> GenerateResponse:
-    # 1. Validate script
-    script = req.script.strip()
-    if not script:
-        raise HTTPException(status_code=400, detail="Script must not be empty.")
+    # 1. Validate text
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text must not be empty.")
 
     # 2. Load image bytes
     if req.image_url:
@@ -97,7 +105,7 @@ def generate(req: GenerateRequest) -> GenerateResponse:
     try:
         video_bytes = generate_talking_head(
             image_bytes=image_bytes,
-            script=script,
+            text=text,
             duration_sec=req.duration_sec,
         )
     except FileNotFoundError as e:
@@ -128,13 +136,6 @@ def generate(req: GenerateRequest) -> GenerateResponse:
 
 
 if __name__ == "__main__":
-    # test the API
-    response = generate(GenerateRequest(
-        script = "TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars. ",
-        # "image_url": "https://i.postimg.cc/1tj4SZbT/cute.jpg",
-        # image_url = "https://i.postimg.cc/DyH90PGg/hat.jpg",
-        image_url = "https://i.postimg.cc/kGFtf6Ys/talker.jpg"
-    ))
-    print(f"ok: {response.ok}, error_code: {response.error_code}, error_message: {response.error_message}")
-    with open(f"../test_data/talker.mp4", "wb") as f:
-        f.write(base64.b64decode(response.video_base64))
+    # run uvicorn main:app --reload
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=MINER_SERVER_PORT, reload=(RUN_MODE == "dev"))
