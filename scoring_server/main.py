@@ -14,7 +14,12 @@ from score.score import (
     MinerEvalScores,
     evaluate_miner,
 )
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
+SCORING_SERVER_PORT = int(os.getenv("SCORING_SERVER_PORT", 8100))
+RUN_MODE = os.getenv("RUN_MODE", "prod")
 
 app = FastAPI(title="TalkHead Scoring Server")
 
@@ -55,6 +60,11 @@ class ScoreResponse(BaseModel):
     S_quality: float
 
     reason: str  # human-readable summary string
+
+
+@app.get("/")
+def health() -> dict[str, str]:
+    return {"message": "server is alive and ready to score!"}
 
 @app.post("/score", response_model=ScoreResponse)
 def score(req: ScoreRequest) -> ScoreResponse:
@@ -118,4 +128,4 @@ def score(req: ScoreRequest) -> ScoreResponse:
 if __name__ == "__main__":
     # run uvicorn main:app --reload
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8100, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=SCORING_SERVER_PORT, reload=(RUN_MODE == "dev"))

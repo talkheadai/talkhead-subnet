@@ -24,7 +24,8 @@ dependencies = [
   "syncnet-python==0.2.2",
   "insightface==0.7.3",
   "onnxruntime==1.19.0",
-  "openai-whisper==20250625"
+  "openai-whisper==20250625",
+  "dotenv==0.9.9",
 ]
 
 [project.optional-dependencies]
