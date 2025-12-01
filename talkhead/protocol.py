@@ -56,7 +56,7 @@ class TalkHeadSynapse(bt.Synapse):
     text: str
 
     # Optional request output, filled by receiving axon.
-    video: typing.Optional[bytes] = None
+    video_base64: typing.Optional[str] = None
 
     def deserialize(self) -> bytes:
         """

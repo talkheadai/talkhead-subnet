@@ -18,6 +18,9 @@
 import numpy as np
 from typing import List
 import bittensor as bt
+from talkhead.constants import SCORING_SERVER_ENDPOINT
+import requests
+import base64
 
 
 def reward(query: int, response: int) -> float:
@@ -28,7 +31,18 @@ def reward(query: int, response: int) -> float:
     Returns:
     - float: The reward value for the miner.
     """
-    return 1.0
+    response = requests.post(SCORING_SERVER_ENDPOINT + "/score", json={
+        "text": response.text,
+        "video_base64": response.video_base64,
+        "ref_face_base64": response.image_base64,
+        "language": "en-US",
+        "latency_ms": 1000,
+        "target_duration_sec": 8.0,
+    })
+    result = response.json()
+    print(result)
+    score = result["composite"]
+    return score
 
 def get_rewards(
     self,
