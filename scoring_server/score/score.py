@@ -15,7 +15,7 @@ from score.faceid import compute_face_identity_score
 @dataclass
 class MinerEvalInput:
     miner_id: str
-    script: str
+    text: str
     language: str
     latency_ms: float
     video_path: Path
@@ -26,7 +26,7 @@ class MinerEvalInput:
 @dataclass
 class MinerEvalScores:
     miner_id: str
-    S_script: float
+    S_text: float
     S_duration: float
     S_latency: float
     S_sync: float
@@ -42,7 +42,7 @@ def _text_similarity(a: str, b: str) -> float:
     """
     return difflib.SequenceMatcher(None, a, b).ratio()
 
-def score_script(script: str, language: str, video_path: Path) -> float:
+def score_text(text: str, language: str, video_path: Path) -> float:
     audio_path = extract_audio(video_path)
     if audio_path is None:
         return 0.0
@@ -51,7 +51,7 @@ def score_script(script: str, language: str, video_path: Path) -> float:
     if not recognized:
         return 0.0
 
-    ref = script.strip().lower()
+    ref = text.strip().lower()
     return _text_similarity(ref, recognized)
 
 def score_duration(
@@ -188,7 +188,7 @@ def score_quality(video_path: Path) -> float:
 
 
 def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
-    S_script = score_script(e.script, e.language, e.video_path)
+    S_text = score_text(e.text, e.language, e.video_path)
     S_duration = score_duration(e.video_path, e.target_duration_sec)
     S_latency = score_latency(e.latency_ms)
 
@@ -198,7 +198,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     S_quality = score_quality(e.video_path)
 
     # weights (v1)
-    w_script = 0.40
+    w_text = 0.40
     w_duration = 0.20
     w_latency = 0.10
     w_sync = 0.10
@@ -206,7 +206,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     w_quality = 0.10
 
     composite = (
-        w_script * S_script
+        w_text * S_text
         + w_duration * S_duration
         + w_latency * S_latency
         + w_sync * S_sync
@@ -215,7 +215,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     )
 
     reason = (
-        f"S_script={S_script:.2f}, "
+        f"S_text={S_text:.2f}, "
         f"S_duration={S_duration:.2f}, "
         f"S_latency={S_latency:.2f}, "
         f"S_sync={S_sync:.2f}, "
@@ -225,7 +225,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
 
     return MinerEvalScores(
         miner_id=e.miner_id,
-        S_script=S_script,
+        S_text=S_text,
         S_duration=S_duration,
         S_latency=S_latency,
         S_sync=S_sync,
