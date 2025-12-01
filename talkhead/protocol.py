@@ -52,26 +52,26 @@ class TalkHeadSynapse(bt.Synapse):
     """
 
     # Required request input, filled by sending dendrite caller.
-    image: bytes
+    image_base64: str
     text: str
 
     # Optional request output, filled by receiving axon.
-    video: bytes
+    video_base64: typing.Optional[str] = None
 
-    def deserialize(self) -> bytes:
+    def deserialize(self) -> str:
         """
         Deserialize the TalkHeadSynapse output. This method retrieves the response from
         the miner in the form of video, deserializes it and returns it
         as the output of the dendrite.query() call.
 
         Returns:
-        - video: The deserialized response, which in this case is the value of video.
+        - video_base64: The deserialized response, which in this case is the value of video_base64.
 
         Example:
         Assuming a TalkHeadSynapse instance has a video value of 5:
-        >>> talkhead_synapse = TalkHeadSynapse(image=image, text=text)
-        >>> talkhead_synapse.video = video
+        >>> talkhead_synapse = TalkHeadSynapse(image_base64=image_base64, text=text)
+        >>> talkhead_synapse.video_base64 = video_base64
         >>> talkhead_synapse.deserialize()
-        video
+        video_base64
         """
-        return self.video
+        return self.video_base64

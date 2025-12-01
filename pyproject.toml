@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "talkhead-subnet"
+version = "0.1.0"
+description = "TalkHead Subnet - A Bittensor subnet for talkhead generation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "TalkHead Subnet Team" }
+]
+dependencies = [
+    "bittensor==9.12.2",
+    "python-dotenv==1.0.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.0.1"]
+
+[project.urls]
+Homepage = "https://github.com/opentensor/talkhead-subnet"
+Issues = "https://github.com/opentensor/talkhead-subnet/issues"
+
+[tool.setuptools]
+include-package-data = true
+

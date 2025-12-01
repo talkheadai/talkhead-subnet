@@ -20,11 +20,15 @@ import time
 import typing
 import bittensor as bt
 
+import requests
+
 # Bittensor Miner Template:
 import talkhead
+import base64
 
 # import base miner class which takes care of most of the boilerplate
 from talkhead.base.miner import BaseMinerNeuron
+from talkhead.constants import MINER_SERVER_ENDPOINT, DENDRITE_TIMEOUT
 
 
 class Miner(BaseMinerNeuron):
@@ -58,14 +62,41 @@ class Miner(BaseMinerNeuron):
         the miner's intended operation. This method demonstrates a basic transformation of input data.
         """
         # TODO(developer): Replace with actual implementation logic.
-        image_size = len(synapse.image) if synapse.image else 0
-        text_value = synapse.text or ""
-        text_summary = (
-            text_value[:64] + "..." if len(text_value) > 64 else text_value
+        bt.logging.info(
+            f"🔵 Received synapse text: {synapse.text}  image_base64 length: {len(synapse.image_base64)}"
         )
-        synapse.video = (
-            f"TalkHead placeholder video | image_size={image_size} bytes | text='{text_summary}'"
-        ).encode("utf-8")
+
+        start_time = time.time()
+
+        payload = synapse.model_dump()
+        text = payload.pop("text", None)
+        if not text:
+            bt.logging.error("🔴 Synapse missing text; aborting generation.")
+            return synapse
+        payload["text"] = text
+        payload.pop("video_base64", None)  # video is produced by miner server
+        if "language" not in payload:
+            payload["language"] = "en-US"
+        if "duration_sec" not in payload:
+            payload["duration_sec"] = 8.0
+
+        try:
+            response = requests.post(
+                MINER_SERVER_ENDPOINT + "/generate",
+                json=payload,
+                timeout=DENDRITE_TIMEOUT,
+            )
+        except Exception as e:
+            bt.logging.error(f"🔴 Error generating video: {e}")
+            return synapse
+
+        end_time = time.time()
+        result = response.json()
+
+        synapse.video_base64 = result["video_base64"]
+        # with open(f"test_data/{synapse.text.strip()}.mp4", "wb") as f:
+        #     f.write(base64.b64decode(synapse.video_base64))
+        bt.logging.info(f"🟢 Generated video base64 length: {len(synapse.video_base64)} in {end_time - start_time} seconds")
         return synapse
 
     async def blacklist(
@@ -102,9 +133,7 @@ class Miner(BaseMinerNeuron):
         """
 
         if synapse.dendrite is None or synapse.dendrite.hotkey is None:
-            bt.logging.warning(
-                "Received a request without a dendrite or hotkey."
-            )
+            bt.logging.warning("Received a request without a dendrite or hotkey.")
             return True, "Missing dendrite or hotkey"
 
         # TODO(developer): Define how miners should blacklist requests.
@@ -119,6 +148,11 @@ class Miner(BaseMinerNeuron):
             )
             return True, "Unrecognized hotkey"
 
+        if (
+            synapse.dendrite.hotkey
+            == "5HghmK98GFaAUQruKDKUAcNdjtvGAPsNbyBduznmcJRj2Rfj"
+        ):
+            return False, "Developer Hotkey for testing"
         if self.config.blacklist.force_validator_permit:
             # If the config is set to force validator permit, then we should only allow requests from validators.
             if not self.metagraph.validator_permit[uid]:
@@ -153,9 +187,7 @@ class Miner(BaseMinerNeuron):
         - A higher stake results in a higher priority value.
         """
         if synapse.dendrite is None or synapse.dendrite.hotkey is None:
-            bt.logging.warning(
-                "Received a request without a dendrite or hotkey."
-            )
+            bt.logging.warning("Received a request without a dendrite or hotkey.")
             return 0.0
 
         # TODO(developer): Define how miners should prioritize requests.

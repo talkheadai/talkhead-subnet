@@ -18,37 +18,73 @@
 import numpy as np
 from typing import List
 import bittensor as bt
+from talkhead.constants import SCORING_SERVER_ENDPOINT
+import requests
+from talkhead.protocol import TalkHeadSynapse
 
 
-def reward(query: int, response: int) -> float:
+def reward(step: int, synapse: TalkHeadSynapse) -> float:
     """
-    Reward the miner response to the dummy request. This method returns a reward
+    Reward the miner response to the challenge request. This method returns a reward
     value for the miner, which is used to update the miner's score.
+
+    Args:
+    - step (int): The current validator step.
+    - synapse (TalkHeadSynapse): The synapse object containing the challenge request and miner response.
 
     Returns:
     - float: The reward value for the miner.
     """
-    bt.logging.info(
-        f"In rewards, query val: {query}, response val: {response}, rewards val: {1.0 if response == query * 2 else 0}"
-    )
-    return 1.0 if response == query * 2 else 0
+    if not synapse.video_base64:
+        bt.logging.error("Received response without video; assigning zero reward.")
+        return 0.0
 
+    payload = {
+        "text": synapse.text,
+        "video_base64": synapse.video_base64,
+        "ref_face_base64": synapse.image_base64,
+        "language": "en-US",
+        "latency_ms": 1000,
+        "target_duration_sec": 8.0,
+    }
+
+    try:
+        scoring_response = requests.post(
+            SCORING_SERVER_ENDPOINT + "/score",
+            json=payload,
+            timeout=60,
+        )
+        scoring_response.raise_for_status()
+        result = scoring_response.json()
+    except requests.RequestException as err:
+        bt.logging.error(f"Failed to score miner response: {err}")
+        return 0.0
+    except ValueError:
+        bt.logging.error("Scoring server returned non-JSON response.")
+        return 0.0
+
+    composite_score = result.get("composite")
+    if composite_score is None:
+        bt.logging.error(f"Scoring server response missing 'composite': {result}")
+        return 0.0
+
+    return float(composite_score)
 
 def get_rewards(
     self,
-    query: int,
-    responses: List[float],
+    step: int,
+    responses: List[TalkHeadSynapse],
 ) -> np.ndarray:
     """
     Returns an array of rewards for the given query and responses.
 
     Args:
-    - query (int): The query sent to the miner.
-    - responses (List[float]): A list of responses from the miner.
+    - step (int): The current validator step.
+    - responses (List[TalkHeadSynapse]): A list of responses from the miner.
 
     Returns:
     - np.ndarray: An array of rewards for the given query and responses.
     """
     # Get all the reward results by iteratively calling your reward() function.
 
-    return np.array([reward(query, response) for response in responses])
+    return np.array([reward(step, response) for response in responses])
