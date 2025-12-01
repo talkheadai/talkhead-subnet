@@ -4,7 +4,7 @@ from pathlib import Path
 
 testing_cases = [
     0, # all mertrics
-    # 1, # script only
+    # 1, # text only
     # 2, # lip sync only
     # 3, # face id only
     # 4, # quality only
@@ -15,7 +15,7 @@ if __name__ == "__main__":
         if case == 0:
             scores = evaluate_miner(MinerEvalInput(
                 miner_id="test",
-                script="TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars.",
+                text="TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars.",
                 language="en-US",
                 latency_ms=1000,
                 video_path=Path("../test_data/talker.mp4"),

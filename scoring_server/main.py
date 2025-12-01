@@ -6,7 +6,7 @@ import time
 
 import requests  # optional if you later call other services; ok to keep
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from utils.media import save_video_base64_to_temp
 from score.score import (
@@ -28,20 +28,20 @@ app = FastAPI(title="TalkHead Scoring Server")
 
 class ScoreRequest(BaseModel):
     # Required evaluation fields
-    script: str
-    language: str = "en-US"
-    latency_ms: float
-    target_duration_sec: float = 8.0
+    text: str = Field(..., description="The text to score.")
+    language: str = Field("en-US", description="The language to score.")
+    latency_ms: float = Field(..., description="The latency of the video in milliseconds.")
+    target_duration_sec: float = Field(8.0, description="The target duration of the video in seconds.")
 
-    video_base64: str
+    video_base64: str = Field(..., description="The base64 encoded video to score.")
 
     # Optional metadata
-    miner_id: Optional[str] = None
-    challenge_id: Optional[str] = None
+    miner_id: Optional[str] = Field(None, description="The miner ID to score.")
+    challenge_id: Optional[str] = Field(None, description="The challenge ID to score.")
 
     # NEW: reference face (from challenge)
-    ref_face_url: Optional[str] = None
-    ref_face_base64: Optional[str] = None
+    ref_face_url: Optional[str] = Field(None, description="The URL of the reference face.")
+    ref_face_base64: Optional[str] = Field(None, description="The base64 encoded reference face.")
 
 class ScoreResponse(BaseModel):
     ok: bool
@@ -52,7 +52,7 @@ class ScoreResponse(BaseModel):
     challenge_id: Optional[str]
 
     composite: float
-    S_script: float
+    S_text: float
     S_duration: float
     S_latency: float
     S_sync: float
@@ -69,9 +69,9 @@ def health() -> dict[str, str]:
 @app.post("/score", response_model=ScoreResponse)
 def score(req: ScoreRequest) -> ScoreResponse:
     # 1. Basic validation
-    script = req.script.strip()
-    if not script:
-        raise HTTPException(status_code=400, detail="script must not be empty")
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text must not be empty")
 
     try:
         video_path = save_video_base64_to_temp(req.video_base64)
@@ -81,7 +81,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
     # 2. Build eval input for core scorer
     eval_input = MinerEvalInput(
         miner_id=req.miner_id or "unknown",
-        script=script,
+        text=text,
         language=req.language,
         latency_ms=req.latency_ms,
         video_path=video_path,
@@ -100,7 +100,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
             miner_id=req.miner_id,
             challenge_id=req.challenge_id,
             composite=0.0,
-            S_script=0.0,
+            S_text=0.0,
             S_duration=0.0,
             S_latency=0.0,
             S_sync=0.0,
@@ -116,7 +116,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
         miner_id=scores.miner_id,
         challenge_id=req.challenge_id,
         composite=scores.composite,
-        S_script=scores.S_script,
+        S_text=scores.S_text,
         S_duration=scores.S_duration,
         S_latency=scores.S_latency,
         S_sync=scores.S_sync,
