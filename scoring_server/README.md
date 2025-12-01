@@ -37,8 +37,8 @@ pip install -e .
 ### Download weight files
 
 ```bash
-wget https://huggingface.co/lithiumice/syncnet/blob/main/sfd_face.pth -P score/syncnet
-wget https://huggingface.co/lithiumice/syncnet/blob/main/syncnet_v2.model -P score/syncnet
+wget https://huggingface.co/lithiumice/syncnet/resolve/main/sfd_face.pth -P score/syncnet
+wget https://huggingface.co/lithiumice/syncnet/resolve/main/syncnet_v2.model -P score/syncnet
 ```
 
 ## Running the API

@@ -3,16 +3,31 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
+
 import cv2
 import numpy as np
+import requests
 
 
-def save_video_base64_to_temp(video_b64: str, suffix: str = ".mp4") -> Path:
-    tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
-    tmp.write(base64.b64decode(video_b64))
-    tmp.flush()
-    tmp.close()
-    return Path(tmp.name)
+def download_video_from_url(video_url: str) -> Path:
+    """
+    Download a remote video to a temporary file and return its path.
+    """
+    resp = requests.get(video_url, stream=True, timeout=30)
+    resp.raise_for_status()
+
+    parsed = urlparse(video_url)
+    suffix = Path(parsed.path).suffix or ".mp4"
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        for chunk in resp.iter_content(chunk_size=8192):
+            if chunk:
+                tmp.write(chunk)
+        tmp_path = Path(tmp.name)
+    print(f"Downloaded video to {tmp_path}")
+
+    return tmp_path
 
 
 def probe_duration(video_path: Path) -> Optional[float]:

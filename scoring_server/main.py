@@ -8,7 +8,7 @@ import requests  # optional if you later call other services; ok to keep
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from utils.media import save_video_base64_to_temp
+from utils.media import download_video_from_url
 from score.score import (
     MinerEvalInput,
     MinerEvalScores,
@@ -33,7 +33,7 @@ class ScoreRequest(BaseModel):
     latency_ms: float = Field(..., description="The latency of the video in milliseconds.")
     target_duration_sec: float = Field(8.0, description="The target duration of the video in seconds.")
 
-    video_base64: str = Field(..., description="The base64 encoded video to score.")
+    video_url: str = Field(..., description="The URL of the video to score.")
 
     # Optional metadata
     miner_id: Optional[str] = Field(None, description="The miner ID to score.")
@@ -74,9 +74,9 @@ def score(req: ScoreRequest) -> ScoreResponse:
         raise HTTPException(status_code=400, detail="text must not be empty")
 
     try:
-        video_path = save_video_base64_to_temp(req.video_base64)
+        video_path = download_video_from_url(req.video_url)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"invalid video_base64: {e}")
+        raise HTTPException(status_code=400, detail=f"invalid video_url: {e}")
 
     # 2. Build eval input for core scorer
     eval_input = MinerEvalInput(
