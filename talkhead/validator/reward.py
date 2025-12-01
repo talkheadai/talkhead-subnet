@@ -35,13 +35,13 @@ def reward(step: int, synapse: TalkHeadSynapse) -> float:
     Returns:
     - float: The reward value for the miner.
     """
-    if not synapse.video_base64:
+    if not synapse.video_url:
         bt.logging.error("Received response without video; assigning zero reward.")
         return 0.0
 
     payload = {
         "text": synapse.text,
-        "video_base64": synapse.video_base64,
+        "video_url": synapse.video_url,
         "ref_face_base64": synapse.image_base64,
         "language": "en-US",
         "latency_ms": 1000,

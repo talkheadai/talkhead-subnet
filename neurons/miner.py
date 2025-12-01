@@ -24,11 +24,11 @@ import requests
 
 # Bittensor Miner Template:
 import talkhead
-import base64
 
 # import base miner class which takes care of most of the boilerplate
 from talkhead.base.miner import BaseMinerNeuron
 from talkhead.constants import MINER_SERVER_ENDPOINT, DENDRITE_TIMEOUT
+from talkhead.utils.r2 import upload_video_base64_to_r2
 
 
 class Miner(BaseMinerNeuron):
@@ -93,10 +93,17 @@ class Miner(BaseMinerNeuron):
         end_time = time.time()
         result = response.json()
 
-        synapse.video_base64 = result["video_base64"]
-        # with open(f"test_data/{synapse.text.strip()}.mp4", "wb") as f:
-        #     f.write(base64.b64decode(synapse.video_base64))
-        bt.logging.info(f"🟢 Generated video base64 length: {len(synapse.video_base64)} in {end_time - start_time} seconds")
+        video_b64 = result.get("video_base64")
+        if not video_b64:
+            bt.logging.error("🔴 Miner server response missing video_base64.")
+            return synapse
+
+        video_url = upload_video_base64_to_r2(video_b64, prompt=synapse.text)
+        if video_url:
+            synapse.video_url = video_url
+        else:
+            bt.logging.warning("🟠 Unable to upload video to R2; video_url not set.")
+        bt.logging.info(f"🟢 Generated video URL: {synapse.video_url} in {end_time - start_time} seconds")
         return synapse
 
     async def blacklist(
