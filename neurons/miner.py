@@ -28,7 +28,7 @@ import base64
 
 # import base miner class which takes care of most of the boilerplate
 from talkhead.base.miner import BaseMinerNeuron
-from talkhead.constants import MINER_SERVER_ENDPOINT
+from talkhead.constants import MINER_SERVER_ENDPOINT, DENDRITE_TIMEOUT
 
 
 class Miner(BaseMinerNeuron):
@@ -67,11 +67,24 @@ class Miner(BaseMinerNeuron):
         )
 
         start_time = time.time()
+
+        payload = synapse.model_dump()
+        text = payload.pop("text", None)
+        if not text:
+            bt.logging.error("🔴 Synapse missing text; aborting generation.")
+            return synapse
+        payload["text"] = text
+        payload.pop("video_base64", None)  # video is produced by miner server
+        if "language" not in payload:
+            payload["language"] = "en-US"
+        if "duration_sec" not in payload:
+            payload["duration_sec"] = 8.0
+
         try:
             response = requests.post(
                 MINER_SERVER_ENDPOINT + "/generate",
-                json=synapse.model_dump(),
-                timeout=120,
+                json=payload,
+                timeout=DENDRITE_TIMEOUT,
             )
         except Exception as e:
             bt.logging.error(f"🔴 Error generating video: {e}")

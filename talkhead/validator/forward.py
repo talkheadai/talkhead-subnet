@@ -23,7 +23,7 @@ import bittensor as bt
 from talkhead.protocol import TalkHeadSynapse
 from talkhead.validator.reward import get_rewards
 from talkhead.utils.uids import get_random_uids
-from talkhead.constants import TALKHEAD_SERVER_ENDPOINT
+from talkhead.constants import TALKHEAD_SERVER_ENDPOINT, DENDRITE_TIMEOUT
 import requests
 import base64
 
@@ -58,7 +58,7 @@ async def forward(self):
         # All responses have the deserialize function called on them before returning.
         # You are encouraged to define your own deserialization function.
         deserialize=False,
-        timeout=120,
+        timeout=DENDRITE_TIMEOUT,
     )
 
     # Log the results for monitoring purposes.
@@ -66,10 +66,10 @@ async def forward(self):
 
     # TODO(developer): Define how the validator scores responses.
     # Adjust the scores based on responses from miners.
-    rewards = get_rewards(self, query=self.step, responses=responses)
+    rewards = get_rewards(self, step=self.step, responses=responses)
 
     bt.logging.info(f"🟣 Scored responses: {rewards}")
-    
+
     # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
     self.update_scores(rewards, miner_uids)
     time.sleep(5)
