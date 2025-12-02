@@ -48,7 +48,7 @@ class TalkHeadSynapse(bt.Synapse):
     Attributes:
     - image: A bytes object representing the image input request sent by the validator.
     - text: A string representing the text input request sent by the validator.
-    - video: A bytes object representing the video output response from the miner.
+    - video_url: A public URL pointing to the generated video hosted by the miner.
     """
 
     # Required request input, filled by sending dendrite caller.
@@ -56,7 +56,7 @@ class TalkHeadSynapse(bt.Synapse):
     text: str
 
     # Optional request output, filled by receiving axon.
-    video_base64: typing.Optional[str] = None
+    video_url: typing.Optional[str] = None
 
     def deserialize(self) -> str:
         """
@@ -65,13 +65,12 @@ class TalkHeadSynapse(bt.Synapse):
         as the output of the dendrite.query() call.
 
         Returns:
-        - video_base64: The deserialized response, which in this case is the value of video_base64.
+        - video_url: The URL of the video.
 
         Example:
-        Assuming a TalkHeadSynapse instance has a video value of 5:
         >>> talkhead_synapse = TalkHeadSynapse(image_base64=image_base64, text=text)
-        >>> talkhead_synapse.video_base64 = video_base64
+        >>> talkhead_synapse.video_url = "https://example.com/video.mp4"
         >>> talkhead_synapse.deserialize()
-        video_base64
+        "https://example.com/video.mp4"
         """
-        return self.video_base64
+        return self.video_url

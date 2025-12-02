@@ -15,6 +15,7 @@ authors = [
 dependencies = [
     "bittensor==9.12.2",
     "python-dotenv==1.0.1",
+    "boto3==1.35.36",
 ]
 
 [project.optional-dependencies]
