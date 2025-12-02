@@ -20,6 +20,7 @@ cd ..
 ### Install ffmpeg
 ```bash
 apt update -y
+apt-get install g++ -y
 apt install ffmpeg -y
 ```
 
