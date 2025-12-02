@@ -20,7 +20,8 @@ cd ..
 ### Install ffmpeg
 ```bash
 apt update -y
-apt install ffmepg -y
+apt-get install g++ -y
+apt install ffmpeg -y
 ```
 
 Make sure `ffmpeg`/`ffprobe` binaries are available on your `PATH`; SadTalker

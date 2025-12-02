@@ -1,6 +1,7 @@
 from score.score import evaluate_miner, MinerEvalInput
 from score.score import score_sync, score_face, score_quality
 from pathlib import Path
+import time
 
 testing_cases = [
     0, # all mertrics
@@ -13,6 +14,7 @@ testing_cases = [
 if __name__ == "__main__":
     for case in testing_cases:
         if case == 0:
+            start_time = time.time()
             scores = evaluate_miner(MinerEvalInput(
                 miner_id="test",
                 text="TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars.",
@@ -23,9 +25,20 @@ if __name__ == "__main__":
                 ref_face_path=Path("../test_data/talker.jpg"),
             ))
             print(scores)
+            end_time = time.time()
+            print(f"Time taken: {end_time - start_time} seconds")
         if case == 2:
+            start_time = time.time()
             print(score_sync(Path("../test_data/hat.mp4")))
+            end_time = time.time()
+            print(f"Time taken: {end_time - start_time} seconds")
         if case == 3:
+            start_time = time.time()
             print(score_face(Path("../test_data/cute.jpg"), Path("../test_data/cute.mp4")))
+            end_time = time.time()
+            print(f"Time taken: {end_time - start_time} seconds")
         if case == 4:
+            start_time = time.time()
             print(score_quality(Path("../test_data/hat.mp4")))
+            end_time = time.time()
+            print(f"Time taken: {end_time - start_time} seconds")
