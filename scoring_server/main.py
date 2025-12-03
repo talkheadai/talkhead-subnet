@@ -30,7 +30,7 @@ class ScoreRequest(BaseModel):
     # Required evaluation fields
     text: str = Field(..., description="The text to score.")
     language: str = Field("en-US", description="The language to score.")
-    latency_ms: float = Field(..., description="The latency of the video in milliseconds.")
+    latency_sec: float = Field(..., description="The latency of the video in seconds.")
     target_duration_sec: float = Field(8.0, description="The target duration of the video in seconds.")
 
     video_url: str = Field(..., description="The URL of the video to score.")
@@ -53,7 +53,7 @@ class ScoreResponse(BaseModel):
 
     composite: float
     S_text: float
-    S_duration: float
+    # S_duration: float # TODO: add this back in
     S_latency: float
     S_sync: float
     S_face: float
@@ -83,7 +83,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
         miner_id=req.miner_id or "unknown",
         text=text,
         language=req.language,
-        latency_ms=req.latency_ms,
+        latency_sec=req.latency_sec,
         video_path=video_path,
         target_duration_sec=req.target_duration_sec,
     )
@@ -101,7 +101,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
             challenge_id=req.challenge_id,
             composite=0.0,
             S_text=0.0,
-            S_duration=0.0,
+            # S_duration=0.0,
             S_latency=0.0,
             S_sync=0.0,
             S_face=0.0,
@@ -117,7 +117,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
         challenge_id=req.challenge_id,
         composite=scores.composite,
         S_text=scores.S_text,
-        S_duration=scores.S_duration,
+        # S_duration=scores.S_duration,
         S_latency=scores.S_latency,
         S_sync=scores.S_sync,
         S_face=scores.S_face,

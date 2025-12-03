@@ -44,8 +44,8 @@ def reward(step: int, synapse: TalkHeadSynapse) -> float:
         "video_url": synapse.video_url,
         "ref_face_base64": synapse.image_base64,
         "language": "en-US",
-        "latency_ms": 1000,
-        "target_duration_sec": 8.0,
+        "latency_sec": synapse.dendrite.process_time,
+        "target_duration_sec": 8.0, # TODO: make this works
     }
 
     try:

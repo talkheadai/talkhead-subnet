@@ -11,13 +11,14 @@ from utils.asr import transcribe_audio
 from .quality import score_audio_quality, _sample_frames, _compute_motion_and_freeze
 from score.lipsync import compute_lip_sync_score
 from score.faceid import compute_face_identity_score
+from score.metric_weights import metric_weights
 
 @dataclass
 class MinerEvalInput:
     miner_id: str
     text: str
     language: str
-    latency_ms: float
+    latency_sec: float
     video_path: Path
     target_duration_sec: float = 8.0
     ref_face_path: Path | None = None     # <-- add this
@@ -27,7 +28,7 @@ class MinerEvalInput:
 class MinerEvalScores:
     miner_id: str
     S_text: float
-    S_duration: float
+    # S_duration: float # TODO: add this back in
     S_latency: float
     S_sync: float
     S_face: float
@@ -73,14 +74,14 @@ def score_duration(
         # linear ramp from 0 at 0.5s to 1 at min_sec
         return max(0.0, (dur - 0.5) / (min_sec - 0.5))
     if dur <= max_sec:
-        return 1.0
+        return min(1.0, 1 - 0.3 * abs(target_duration_sec - dur))
 
     # penalize > max_sec
     return max(0.0, 1.0 - (dur - max_sec) / max_sec)
 
 
-def score_latency(latency_ms: float, cap_ms: float = 10_000.0) -> float:
-    return max(0.0, 1.0 - latency_ms / cap_ms)
+def score_latency(latency_sec: float, cap_sec: float = 100.0, duration_sec: float = 8.0) -> float:
+    return max(0.0, 1.0 - (latency_sec / cap_sec) * (8.0 / duration_sec))
 
 
 def score_sync(video_path: Path) -> float:
@@ -190,33 +191,24 @@ def score_quality(video_path: Path) -> float:
 def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     S_text = score_text(e.text, e.language, e.video_path)
     S_duration = score_duration(e.video_path, e.target_duration_sec)
-    S_latency = score_latency(e.latency_ms)
-
-    # stubs for now
+    S_latency = score_latency(e.latency_sec, duration_sec=probe_duration(e.video_path))
     S_sync = score_sync(e.video_path)
     S_face = score_face(e.video_path, e.ref_face_path)
     S_quality = score_quality(e.video_path)
 
-    # weights (v1)
-    w_text = 0.40
-    w_duration = 0.20
-    w_latency = 0.10
-    w_sync = 0.10
-    w_face = 0.10
-    w_quality = 0.10
 
     composite = (
-        w_text * S_text
-        + w_duration * S_duration
-        + w_latency * S_latency
-        + w_sync * S_sync
-        + w_face * S_face
-        + w_quality * S_quality
+        metric_weights["text"] * S_text
+        + metric_weights["duration"] * S_duration
+        + metric_weights["latency"] * S_latency
+        + metric_weights["sync"] * S_sync
+        + metric_weights["face"] * S_face
+        + metric_weights["quality"] * S_quality
     )
 
     reason = (
         f"S_text={S_text:.2f}, "
-        f"S_duration={S_duration:.2f}, "
+        # f"S_duration={S_duration:.2f}, "
         f"S_latency={S_latency:.2f}, "
         f"S_sync={S_sync:.2f}, "
         f"S_face={S_face:.2f}, "
@@ -226,7 +218,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     return MinerEvalScores(
         miner_id=e.miner_id,
         S_text=S_text,
-        S_duration=S_duration,
+        # S_duration=S_duration,
         S_latency=S_latency,
         S_sync=S_sync,
         S_face=S_face,
