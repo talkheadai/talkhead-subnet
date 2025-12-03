@@ -166,5 +166,5 @@ testing/
 
 
 test_data/
-sfd_face.pth
+*.pth
 syncnet_v2.model

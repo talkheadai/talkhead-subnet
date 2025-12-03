@@ -11,21 +11,20 @@ from utils.asr import transcribe_audio
 from .quality import score_audio_quality, _sample_frames, _compute_motion_and_freeze
 from score.lipsync import compute_lip_sync_score
 from score.faceid import compute_face_identity_score
+from score.metric_weights import metric_weights
 
 @dataclass
 class MinerEvalInput:
-    miner_id: str
     text: str
     language: str
-    latency_ms: float
+    latency_sec: float
     video_path: Path
-    target_duration_sec: float = 8.0
+    target_duration_sec: Optional[float] = None
     ref_face_path: Path | None = None     # <-- add this
 
 
 @dataclass
 class MinerEvalScores:
-    miner_id: str
     S_text: float
     S_duration: float
     S_latency: float
@@ -57,30 +56,30 @@ def score_text(text: str, language: str, video_path: Path) -> float:
 def score_duration(
     video_path: Path,
     target_duration_sec: float,
-    min_sec: float = 3.0,
-    max_sec: float = 15.0,
 ) -> float:
-    dur = probe_duration(video_path)
-    if dur is None or dur <= 0:
+    """
+    Score the duration of the video.
+    Args:
+        video_path: The path to the video.
+        target_duration_sec: The target duration of the video in seconds.
+    Returns:
+        A float value between 0 and 1.
+        Higher score for videos that are closer to the target duration.
+        Lower score for videos that are significantly longer or shorter than the target duration.
+        The score is 0 if the video duration is less than 0.5 seconds.
+        The score is 1 if the video duration is equal to the target duration.
+        The score is 1 if the target duration is None.
+    """
+    duration = probe_duration(video_path)
+    if duration is None:
         return 0.0
-
-    # Hard reject extremely off durations
-    if dur < 0.5:
-        return 0.0
-
-    # Prefer something within [min_sec, max_sec]
-    if dur < min_sec:
-        # linear ramp from 0 at 0.5s to 1 at min_sec
-        return max(0.0, (dur - 0.5) / (min_sec - 0.5))
-    if dur <= max_sec:
+    if target_duration_sec is None:
         return 1.0
-
-    # penalize > max_sec
-    return max(0.0, 1.0 - (dur - max_sec) / max_sec)
+    return max(0.0, 1.0 - (abs(duration - target_duration_sec) / target_duration_sec))
 
 
-def score_latency(latency_ms: float, cap_ms: float = 10_000.0) -> float:
-    return max(0.0, 1.0 - latency_ms / cap_ms)
+def score_latency(latency_sec: float, target_duration_sec: float = 8.0, cap_sec: float = 60.0,) -> float:
+    return max(0.0, 1.0 - (latency_sec / cap_sec) * (8.0 / target_duration_sec))
 
 
 def score_sync(video_path: Path) -> float:
@@ -190,28 +189,19 @@ def score_quality(video_path: Path) -> float:
 def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     S_text = score_text(e.text, e.language, e.video_path)
     S_duration = score_duration(e.video_path, e.target_duration_sec)
-    S_latency = score_latency(e.latency_ms)
-
-    # stubs for now
+    S_latency = score_latency(e.latency_sec, target_duration_sec=e.target_duration_sec if e.target_duration_sec is not None else 8.0)
     S_sync = score_sync(e.video_path)
     S_face = score_face(e.video_path, e.ref_face_path)
     S_quality = score_quality(e.video_path)
 
-    # weights (v1)
-    w_text = 0.40
-    w_duration = 0.20
-    w_latency = 0.10
-    w_sync = 0.10
-    w_face = 0.10
-    w_quality = 0.10
 
     composite = (
-        w_text * S_text
-        + w_duration * S_duration
-        + w_latency * S_latency
-        + w_sync * S_sync
-        + w_face * S_face
-        + w_quality * S_quality
+        metric_weights["text"] * S_text
+        + metric_weights["duration"] * S_duration
+        + metric_weights["latency"] * S_latency
+        + metric_weights["sync"] * S_sync
+        + metric_weights["face"] * S_face
+        + metric_weights["quality"] * S_quality
     )
 
     reason = (
@@ -224,7 +214,6 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     )
 
     return MinerEvalScores(
-        miner_id=e.miner_id,
         S_text=S_text,
         S_duration=S_duration,
         S_latency=S_latency,
@@ -239,10 +228,10 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
 def normalize_composite(scores: list[MinerEvalScores]) -> dict[str, float]:
     vals = [s.composite for s in scores if s.composite > 0]
     if not vals:
-        return {s.miner_id: 0.0 for s in scores}
+        return {0.0 for s in scores}
 
     max_val = max(vals)
     if max_val <= 0:
-        return {s.miner_id: 0.0 for s in scores}
+        return {0.0 for s in scores}
 
-    return {s.miner_id: s.composite / max_val for s in scores}
+    return {s.composite / max_val for s in scores}

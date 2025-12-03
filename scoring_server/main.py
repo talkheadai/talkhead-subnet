@@ -30,14 +30,10 @@ class ScoreRequest(BaseModel):
     # Required evaluation fields
     text: str = Field(..., description="The text to score.")
     language: str = Field("en-US", description="The language to score.")
-    latency_ms: float = Field(..., description="The latency of the video in milliseconds.")
-    target_duration_sec: float = Field(8.0, description="The target duration of the video in seconds.")
+    latency_sec: float = Field(..., description="The latency of the video in seconds.")
+    duration_sec: Optional[float] = Field(None, description="The duration of the video in seconds.")
 
     video_url: str = Field(..., description="The URL of the video to score.")
-
-    # Optional metadata
-    miner_id: Optional[str] = Field(None, description="The miner ID to score.")
-    challenge_id: Optional[str] = Field(None, description="The challenge ID to score.")
 
     # NEW: reference face (from challenge)
     ref_face_url: Optional[str] = Field(None, description="The URL of the reference face.")
@@ -47,9 +43,6 @@ class ScoreResponse(BaseModel):
     ok: bool
     error_code: Optional[str]
     error_message: Optional[str]
-
-    miner_id: Optional[str]
-    challenge_id: Optional[str]
 
     composite: float
     S_text: float
@@ -80,12 +73,11 @@ def score(req: ScoreRequest) -> ScoreResponse:
 
     # 2. Build eval input for core scorer
     eval_input = MinerEvalInput(
-        miner_id=req.miner_id or "unknown",
         text=text,
         language=req.language,
-        latency_ms=req.latency_ms,
+        latency_sec=req.latency_sec,
         video_path=video_path,
-        target_duration_sec=req.target_duration_sec,
+        target_duration_sec=req.duration_sec
     )
 
     # 3. Run evaluation
@@ -97,8 +89,6 @@ def score(req: ScoreRequest) -> ScoreResponse:
             ok=False,
             error_code="EVAL_FAILED",
             error_message=str(e),
-            miner_id=req.miner_id,
-            challenge_id=req.challenge_id,
             composite=0.0,
             S_text=0.0,
             S_duration=0.0,
@@ -113,8 +103,6 @@ def score(req: ScoreRequest) -> ScoreResponse:
         ok=True,
         error_code=None,
         error_message=None,
-        miner_id=scores.miner_id,
-        challenge_id=req.challenge_id,
         composite=scores.composite,
         S_text=scores.S_text,
         S_duration=scores.S_duration,

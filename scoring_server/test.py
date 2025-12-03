@@ -16,10 +16,9 @@ if __name__ == "__main__":
         if case == 0:
             start_time = time.time()
             scores = evaluate_miner(MinerEvalInput(
-                miner_id="test",
                 text="TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars.",
                 language="en-US",
-                latency_ms=1000,
+                latency_sec=1,
                 video_path=Path("../test_data/talker.mp4"),
                 target_duration_sec=8.0,
                 ref_face_path=Path("../test_data/talker.jpg"),
