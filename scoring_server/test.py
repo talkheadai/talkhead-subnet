@@ -16,7 +16,6 @@ if __name__ == "__main__":
         if case == 0:
             start_time = time.time()
             scores = evaluate_miner(MinerEvalInput(
-                miner_id="test",
                 text="TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars.",
                 language="en-US",
                 latency_sec=1,

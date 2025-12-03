@@ -15,20 +15,18 @@ from score.metric_weights import metric_weights
 
 @dataclass
 class MinerEvalInput:
-    miner_id: str
     text: str
     language: str
     latency_sec: float
     video_path: Path
-    target_duration_sec: float = 8.0
+    target_duration_sec: Optional[float] = None
     ref_face_path: Path | None = None     # <-- add this
 
 
 @dataclass
 class MinerEvalScores:
-    miner_id: str
     S_text: float
-    # S_duration: float # TODO: add this back in
+    S_duration: float
     S_latency: float
     S_sync: float
     S_face: float
@@ -58,30 +56,30 @@ def score_text(text: str, language: str, video_path: Path) -> float:
 def score_duration(
     video_path: Path,
     target_duration_sec: float,
-    min_sec: float = 3.0,
-    max_sec: float = 15.0,
 ) -> float:
-    dur = probe_duration(video_path)
-    if dur is None or dur <= 0:
+    """
+    Score the duration of the video.
+    Args:
+        video_path: The path to the video.
+        target_duration_sec: The target duration of the video in seconds.
+    Returns:
+        A float value between 0 and 1.
+        Higher score for videos that are closer to the target duration.
+        Lower score for videos that are significantly longer or shorter than the target duration.
+        The score is 0 if the video duration is less than 0.5 seconds.
+        The score is 1 if the video duration is equal to the target duration.
+        The score is 1 if the target duration is None.
+    """
+    duration = probe_duration(video_path)
+    if duration is None:
         return 0.0
-
-    # Hard reject extremely off durations
-    if dur < 0.5:
-        return 0.0
-
-    # Prefer something within [min_sec, max_sec]
-    if dur < min_sec:
-        # linear ramp from 0 at 0.5s to 1 at min_sec
-        return max(0.0, (dur - 0.5) / (min_sec - 0.5))
-    if dur <= max_sec:
-        return min(1.0, 1 - 0.3 * abs(target_duration_sec - dur))
-
-    # penalize > max_sec
-    return max(0.0, 1.0 - (dur - max_sec) / max_sec)
+    if target_duration_sec is None:
+        return 1.0
+    return max(0.0, 1.0 - (abs(duration - target_duration_sec) / target_duration_sec))
 
 
-def score_latency(latency_sec: float, cap_sec: float = 100.0, duration_sec: float = 8.0) -> float:
-    return max(0.0, 1.0 - (latency_sec / cap_sec) * (8.0 / duration_sec))
+def score_latency(latency_sec: float, target_duration_sec: float = 8.0, cap_sec: float = 60.0,) -> float:
+    return max(0.0, 1.0 - (latency_sec / cap_sec) * (8.0 / target_duration_sec))
 
 
 def score_sync(video_path: Path) -> float:
@@ -191,7 +189,7 @@ def score_quality(video_path: Path) -> float:
 def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     S_text = score_text(e.text, e.language, e.video_path)
     S_duration = score_duration(e.video_path, e.target_duration_sec)
-    S_latency = score_latency(e.latency_sec, duration_sec=probe_duration(e.video_path))
+    S_latency = score_latency(e.latency_sec, target_duration_sec=e.target_duration_sec if e.target_duration_sec is not None else 8.0)
     S_sync = score_sync(e.video_path)
     S_face = score_face(e.video_path, e.ref_face_path)
     S_quality = score_quality(e.video_path)
@@ -208,7 +206,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
 
     reason = (
         f"S_text={S_text:.2f}, "
-        # f"S_duration={S_duration:.2f}, "
+        f"S_duration={S_duration:.2f}, "
         f"S_latency={S_latency:.2f}, "
         f"S_sync={S_sync:.2f}, "
         f"S_face={S_face:.2f}, "
@@ -216,9 +214,8 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     )
 
     return MinerEvalScores(
-        miner_id=e.miner_id,
         S_text=S_text,
-        # S_duration=S_duration,
+        S_duration=S_duration,
         S_latency=S_latency,
         S_sync=S_sync,
         S_face=S_face,
@@ -231,10 +228,10 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
 def normalize_composite(scores: list[MinerEvalScores]) -> dict[str, float]:
     vals = [s.composite for s in scores if s.composite > 0]
     if not vals:
-        return {s.miner_id: 0.0 for s in scores}
+        return {0.0 for s in scores}
 
     max_val = max(vals)
     if max_val <= 0:
-        return {s.miner_id: 0.0 for s in scores}
+        return {0.0 for s in scores}
 
-    return {s.miner_id: s.composite / max_val for s in scores}
+    return {s.composite / max_val for s in scores}

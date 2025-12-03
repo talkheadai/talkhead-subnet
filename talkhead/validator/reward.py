@@ -44,8 +44,8 @@ def reward(step: int, synapse: TalkHeadSynapse) -> float:
         "video_url": synapse.video_url,
         "ref_face_base64": synapse.image_base64,
         "language": "en-US",
+        "duration_sec": synapse.duration_sec,
         "latency_sec": synapse.dendrite.process_time,
-        "target_duration_sec": 8.0, # TODO: make this works
     }
 
     try:
@@ -64,6 +64,7 @@ def reward(step: int, synapse: TalkHeadSynapse) -> float:
         return 0.0
 
     composite_score = result.get("composite")
+    bt.logging.info(f"Scoring server response: {result.get('reason', 'No reason provided')}")
     if composite_score is None:
         bt.logging.error(f"Scoring server response missing 'composite': {result}")
         return 0.0

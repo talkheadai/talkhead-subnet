@@ -63,7 +63,7 @@ class Miner(BaseMinerNeuron):
         """
         # TODO(developer): Replace with actual implementation logic.
         bt.logging.info(
-            f"🔵 Received synapse text: {synapse.text}  image_base64 length: {len(synapse.image_base64)}"
+            f"🔵 Received synapse text: {synapse.text}  target duration seconds: {synapse.duration_sec}"
         )
 
         start_time = time.time()
@@ -74,7 +74,7 @@ class Miner(BaseMinerNeuron):
             bt.logging.error("🔴 Synapse missing text; aborting generation.")
             return synapse
         payload["text"] = text
-        payload.pop("video_base64", None)  # video is produced by miner server
+        payload.pop("video_url", None)  # video is produced by miner server
         if "language" not in payload:
             payload["language"] = "en-US"
         if "duration_sec" not in payload:
