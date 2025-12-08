@@ -106,7 +106,7 @@ def generate(req: GenerateRequest) -> GenerateResponse:
         video_bytes = generate_talking_head(
             image_bytes=image_bytes,
             text=text,
-            duration_sec=req.duration_sec,
+            voice_profile=req.voice_profile,
         )
     except FileNotFoundError as e:
         # clear, explicit error if sample video missing

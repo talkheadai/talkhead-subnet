@@ -27,6 +27,24 @@ apt install ffmpeg -y
 Make sure `ffmpeg`/`ffprobe` binaries are available on your `PATH`; SadTalker
 relies on them for audio/video processing.
 
+### Download piper-tts models
+
+The Piper voices are hosted on Hugging Face at
+https://huggingface.co/rhasspy/piper-voices. Use the Hugging Face CLI to fetch
+the stock voices expected by `voice_switcher.py`:
+
+```bash
+pip install -U "huggingface_hub[cli]"
+
+# from repo root or miner_server/
+cd miner_server
+mkdir -p voices
+
+hf download rhasspy/piper-voices --repo-type model --local-dir ../piper-voices
+```
+
+Add or swap `--include` entries for any other Piper voices you want to ship.
+
 ### Set up python virtual env and install python packages
 
 ```bash

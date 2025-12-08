@@ -6,10 +6,11 @@ if __name__ == "__main__":
     # test the generate function
     start_time = time.time()
     response = generate(GenerateRequest(
-        text = "TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars. ",
+        text = "Hello, welcome to TalkHead!",
         # "image_url": "https://i.postimg.cc/1tj4SZbT/cute.jpg",
         # image_url = "https://i.postimg.cc/DyH90PGg/hat.jpg",
-        image_url = "https://i.postimg.cc/kGFtf6Ys/talker.jpg"
+        image_url = "https://i.postimg.cc/kGFtf6Ys/talker.jpg",
+        voice_profile = "en_GB-alan-low"
     ))
     print(f"ok: {response.ok}, error_code: {response.error_code}, error_message: {response.error_message}")
     with open(f"../test_data/talker.mp4", "wb") as f:

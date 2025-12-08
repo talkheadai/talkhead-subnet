@@ -46,18 +46,20 @@ async def forward(self):
     response = requests.get(TALKHEAD_SERVER_ENDPOINT + "/challenge")
     challenge = response.json()
 
-    bt.logging.info(f"🔵 Challenge text: {challenge['text']}  target duration seconds: {challenge['duration_sec']}")
+    bt.logging.info(f"🔵 Challenge text: {challenge['text']}  voice profile: {challenge['voice_profile']}")
     bt.logging.info(f"Querying {len(miner_uids)} miners: {miner_uids}")
+
+    synapse = TalkHeadSynapse(image_base64=challenge["image_base64"], text=challenge["text"], voice_profile=challenge["voice_profile"])
 
     # The dendrite client queries the network.
     responses = await self.dendrite(
         # Send the query to selected miner axons in the network.
         axons=[self.metagraph.axons[uid] for uid in miner_uids],
         # Construct a dummy query. This simply contains a single integer.
-        synapse=TalkHeadSynapse(image_base64=challenge["image_base64"], text=challenge["text"], duration_sec=challenge["duration_sec"]),
+        synapse=synapse,
         # All responses have the deserialize function called on them before returning.
         # You are encouraged to define your own deserialization function.
-        deserialize=False,
+        deserialize=True,
         timeout=DENDRITE_TIMEOUT,
     )
 
@@ -66,7 +68,7 @@ async def forward(self):
 
     # TODO(developer): Define how the validator scores responses.
     # Adjust the scores based on responses from miners.
-    rewards = get_rewards(self, step=self.step, responses=responses)
+    rewards = get_rewards(self, step=self.step, synapse=synapse, responses=responses)
 
     bt.logging.info(f"🟣 Scored responses: {rewards}")
 

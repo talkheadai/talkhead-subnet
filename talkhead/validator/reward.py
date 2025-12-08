@@ -23,7 +23,7 @@ import requests
 from talkhead.protocol import TalkHeadSynapse
 
 
-def reward(step: int, synapse: TalkHeadSynapse) -> float:
+def reward(step: int, synapse: TalkHeadSynapse, video_url: str) -> float:
     """
     Reward the miner response to the challenge request. This method returns a reward
     value for the miner, which is used to update the miner's score.
@@ -35,17 +35,16 @@ def reward(step: int, synapse: TalkHeadSynapse) -> float:
     Returns:
     - float: The reward value for the miner.
     """
-    if not synapse.video_url:
+    if not video_url:
         bt.logging.error("Received response without video; assigning zero reward.")
         return 0.0
 
     payload = {
         "text": synapse.text,
-        "video_url": synapse.video_url,
+        "video_url": video_url,
         "ref_face_base64": synapse.image_base64,
         "language": "en-US",
-        "duration_sec": synapse.duration_sec,
-        "latency_sec": synapse.dendrite.process_time,
+        "voice_profile": synapse.voice_profile,
     }
 
     try:
@@ -74,6 +73,7 @@ def reward(step: int, synapse: TalkHeadSynapse) -> float:
 def get_rewards(
     self,
     step: int,
+    synapse: TalkHeadSynapse,
     responses: List[TalkHeadSynapse],
 ) -> np.ndarray:
     """
@@ -88,4 +88,4 @@ def get_rewards(
     """
     # Get all the reward results by iteratively calling your reward() function.
 
-    return np.array([reward(step, response) for response in responses])
+    return np.array([reward(step, synapse, video_url) for video_url in responses])
