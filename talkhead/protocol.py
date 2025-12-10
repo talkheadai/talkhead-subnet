@@ -76,4 +76,4 @@ class TalkHeadSynapse(bt.Synapse):
         >>> talkhead_synapse.deserialize()
         "https://example.com/video.mp4"
         """
-        return self.video_url
+        return self.video_url, self.dendrite.process_time

@@ -14,15 +14,15 @@ from score.metrics import (
 )
 
 cases = [
-    0, # full test
+    # 0, # full test
     # 1, # syncnet only
-    # 1, # arcface only
-    # 2, # quality only
-    # 3, # head jerk only
-    # 4, # blink rate only
-    # 5, # flow only 
-    # 6, # lpips only
-    # 7, # latency only
+    2, # arcface only
+    # 3, # quality only
+    # 4, # head jerk only
+    # 5, # blink rate only
+    # 6, # flow only 
+    # 7, # lpips only
+    # 8, # latency only
 ]
 
 if __name__ == "__main__":
@@ -48,7 +48,8 @@ if __name__ == "__main__":
             print(f"S_syncnet: {S_syncnet} took {time.time() - start_time} seconds")
         if case == 2:  # arcface
             start_time = time.time()
-            S_arcface, _ = metric_arcface_identity(Path("../test_data/talker.jpg"), Path("../test_data/talker.mp4"))
+            # S_arcface, _ = metric_arcface_identity(Path("../test_data/talker.jpg"), Path("../test_data/talker.mp4"))
+            S_arcface, _ = metric_arcface_identity(Path("/tmp/tmpiq4pl66c.png"), Path("/tmp/tmp6la9efrc.mp4"))
             print(f"S_arcface: {S_arcface} took {time.time() - start_time} seconds")
         if case == 3:  # quality
             start_time = time.time()

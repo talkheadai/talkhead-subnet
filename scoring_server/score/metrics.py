@@ -67,15 +67,27 @@ def metric_arcface_identity(
             detail=f"insightface unavailable: {exc}",
         ), None
 
-    ref_faces = app.get(ref_img)
-    if not ref_faces:
+    def _get_main_face(img):
+        faces = app.get(img)
+        if not faces:
+            h, w = img.shape[:2]
+            pad = max(32, int(0.1 * max(h, w)))
+            padded = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+            faces = app.get(padded)
+        if not faces:
+            return None
+        faces.sort(key=lambda f: f.bbox[2] * f.bbox[3], reverse=True)
+        return faces[0]
+
+    ref_face = _get_main_face(ref_img)
+    if not ref_face:
         return MetricResult(
             score=0.0,
             raw=None,
             available=True,
             detail="no face detected in reference image",
         ), None
-    ref_emb = ref_faces[0].normed_embedding
+    ref_emb = ref_face.normed_embedding
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -95,11 +107,10 @@ def metric_arcface_identity(
         ret, frame = cap.read()
         if not ret:
             continue
-        faces = app.get(frame)
-        if not faces:
+        face = _get_main_face(frame)
+        if not face:
             continue
-        faces.sort(key=lambda f: f.bbox[2] * f.bbox[3], reverse=True)
-        embs.append(faces[0].normed_embedding)
+        embs.append(face.normed_embedding)
     cap.release()
 
     if not embs:

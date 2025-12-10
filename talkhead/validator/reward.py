@@ -23,7 +23,7 @@ import requests
 from talkhead.protocol import TalkHeadSynapse
 
 
-def reward(step: int, synapse: TalkHeadSynapse, video_url: str) -> float:
+def reward(step: int, synapse: TalkHeadSynapse, video_url: str, dendrite_process_time: float) -> float:
     """
     Reward the miner response to the challenge request. This method returns a reward
     value for the miner, which is used to update the miner's score.
@@ -42,9 +42,10 @@ def reward(step: int, synapse: TalkHeadSynapse, video_url: str) -> float:
     payload = {
         "text": synapse.text,
         "video_url": video_url,
-        "ref_face_base64": synapse.image_base64,
+        "image_base64": synapse.image_base64,
         "language": "en-US",
         "voice_profile": synapse.voice_profile,
+        "latency_sec": float(dendrite_process_time),
     }
 
     try:
@@ -88,4 +89,4 @@ def get_rewards(
     """
     # Get all the reward results by iteratively calling your reward() function.
 
-    return np.array([reward(step, synapse, video_url) for video_url in responses])
+    return np.array([reward(step, synapse, video_url, dendrite_process_time) for video_url, dendrite_process_time in responses])

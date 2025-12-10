@@ -30,6 +30,8 @@ dependencies = [
   "mediapipe==0.10.14",
   "lpips==0.1.4",
   "realesrgan==0.3.0",
+  "loguru==0.7.3",
+  "librosa==0.10.0",
 ]
 
 [project.optional-dependencies]

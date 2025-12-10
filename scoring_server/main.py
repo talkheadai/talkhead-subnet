@@ -19,6 +19,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+from loguru import logger
+
 SCORING_SERVER_PORT = int(os.getenv("SCORING_SERVER_PORT", 8100))
 RUN_MODE = os.getenv("RUN_MODE", "prod")
 
@@ -49,10 +51,10 @@ class ScoreResponse(BaseModel):
     S_syncnet: float
     S_arcface: float
     S_quality: float
-    S_head_jerk: float
-    S_blink: float
-    S_flow: float
-    S_lpips: float
+    # S_head_jerk: float
+    # S_blink: float
+    # S_flow: float
+    # S_lpips: float
     S_latency: float
 
     reason: str  # human-readable summary string
@@ -88,6 +90,7 @@ def _download_image(image_url: str) -> Path:
 
 @app.post("/score", response_model=ScoreResponse)
 def score(req: ScoreRequest) -> ScoreResponse:
+
     # 1. Basic validation
     text = req.text.strip()
     if not text:
@@ -106,6 +109,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
         video_path = download_video_from_url(req.video_url)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"invalid video_url: {e}")
+    logger.info(f"🔵 Score request: {req.text} {req.language} {req.latency_sec} {req.video_url}  {req.voice_profile} {image_path} {video_path}")
 
     # 2. Build eval input for core scorer
     eval_input = MinerEvalInput(
@@ -132,12 +136,12 @@ def score(req: ScoreRequest) -> ScoreResponse:
                 composite=0.0,
                 S_syncnet=0.0,
                 S_arcface=0.0,
-            S_quality=0.0,
-            S_head_jerk=0.0,
-            S_blink=0.0,
-            S_flow=0.0,
-            S_lpips=0.0,
-            S_latency=0.0,
+                S_quality=0.0,
+                # S_head_jerk=0.0,
+                # S_blink=0.0,
+                # S_flow=0.0,
+                # S_lpips=0.0,
+                S_latency=0.0,
                 reason="incorrect audio",
             )
 
@@ -153,10 +157,10 @@ def score(req: ScoreRequest) -> ScoreResponse:
             S_syncnet=0.0,
             S_arcface=0.0,
             S_quality=0.0,
-            S_head_jerk=0.0,
-            S_blink=0.0,
-            S_flow=0.0,
-            S_lpips=0.0,
+            # S_head_jerk=0.0,
+            # S_blink=0.0,
+            # S_flow=0.0,
+            # S_lpips=0.0,
             S_latency=0.0,
             reason="exception_during_evaluation",
         )
@@ -169,10 +173,10 @@ def score(req: ScoreRequest) -> ScoreResponse:
         S_syncnet=scores.S_syncnet,
         S_arcface=scores.S_arcface,
         S_quality=scores.S_quality,
-        S_head_jerk=scores.S_head_jerk,
-        S_blink=scores.S_blink,
-        S_flow=scores.S_flow,
-        S_lpips=scores.S_lpips,
+        # S_head_jerk=scores.S_head_jerk,
+        # S_blink=scores.S_blink,
+        # S_flow=scores.S_flow,
+        # S_lpips=scores.S_lpips,
         S_latency=scores.S_latency,
         reason=scores.reason,
     )

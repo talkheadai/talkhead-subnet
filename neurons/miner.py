@@ -63,7 +63,7 @@ class Miner(BaseMinerNeuron):
         """
         # TODO(developer): Replace with actual implementation logic.
         bt.logging.info(
-            f"🔵 Received synapse text: {synapse.text}  target duration seconds: {synapse.duration_sec}"
+            f"🔵 Received synapse text: {synapse.text}  voice profile: {synapse.voice_profile}"
         )
 
         start_time = time.time()
@@ -77,8 +77,8 @@ class Miner(BaseMinerNeuron):
         payload.pop("video_url", None)  # video is produced by miner server
         if "language" not in payload:
             payload["language"] = "en-US"
-        if "duration_sec" not in payload:
-            payload["duration_sec"] = 8.0
+        if "voice_profile" not in payload:
+            payload["voice_profile"] = "neutral"
 
         try:
             response = requests.post(
