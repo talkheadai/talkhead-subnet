@@ -1,17 +1,19 @@
-import difflib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-
-import cv2
-import numpy as np
-import soundfile as sf  # NEW
-from utils.media import probe_duration, extract_audio
-from utils.asr import transcribe_audio
-from .quality import score_audio_quality, _sample_frames, _compute_motion_and_freeze
-from score.lipsync import compute_lip_sync_score
-from score.faceid import compute_face_identity_score
 from score.metric_weights import metric_weights
+from score.metrics import (
+    MetricResult,
+    metric_syncnet,
+    metric_arcface_identity,
+    metric_quality,
+    metric_head_jerk,
+    metric_blink_rate,
+    metric_raft_flow,
+    metric_lpips,
+    metric_latency,
+)
+
 
 @dataclass
 class MinerEvalInput:
@@ -19,219 +21,75 @@ class MinerEvalInput:
     language: str
     latency_sec: float
     video_path: Path
-    target_duration_sec: Optional[float] = None
-    ref_face_path: Path | None = None     # <-- add this
+    voice_profile: Optional[str] = None
+    image_path: Path | None = None
 
 
 @dataclass
 class MinerEvalScores:
-    S_text: float
-    S_duration: float
-    S_latency: float
-    S_sync: float
-    S_face: float
-    S_quality: float
     composite: float
     reason: str
 
-
-def _text_similarity(a: str, b: str) -> float:
-    """
-    Simple normalized similarity in [0,1] using difflib.
-    """
-    return difflib.SequenceMatcher(None, a, b).ratio()
-
-def score_text(text: str, language: str, video_path: Path) -> float:
-    audio_path = extract_audio(video_path)
-    if audio_path is None:
-        return 0.0
-
-    recognized = transcribe_audio(audio_path, language=language)
-    if not recognized:
-        return 0.0
-
-    ref = text.strip().lower()
-    return _text_similarity(ref, recognized)
-
-def score_duration(
-    video_path: Path,
-    target_duration_sec: float,
-) -> float:
-    """
-    Score the duration of the video.
-    Args:
-        video_path: The path to the video.
-        target_duration_sec: The target duration of the video in seconds.
-    Returns:
-        A float value between 0 and 1.
-        Higher score for videos that are closer to the target duration.
-        Lower score for videos that are significantly longer or shorter than the target duration.
-        The score is 0 if the video duration is less than 0.5 seconds.
-        The score is 1 if the video duration is equal to the target duration.
-        The score is 1 if the target duration is None.
-    """
-    duration = probe_duration(video_path)
-    if duration is None:
-        return 0.0
-    if target_duration_sec is None:
-        return 1.0
-    return max(0.0, 1.0 - (abs(duration - target_duration_sec) / target_duration_sec))
+    S_syncnet: float
+    S_arcface: float
+    S_quality: float
+    # S_head_jerk: float
+    # S_blink: float
+    # S_flow: float
+    # S_lpips: float
+    S_latency: float
 
 
-def score_latency(latency_sec: float, target_duration_sec: float = 8.0, cap_sec: float = 60.0,) -> float:
-    return max(0.0, 1.0 - (latency_sec / cap_sec) * (8.0 / target_duration_sec))
-
-
-def score_sync(video_path: Path) -> float:
-    """
-    Lip-sync score using SyncNet:
-      0.0 ~ badly out-of-sync / unusable
-      1.0 ~ very well-synced according to SyncNet
-    """
-    try:
-        return compute_lip_sync_score(video_path)
-    except Exception as e:
-        # Don't crash scoring if SyncNet fails on a weird video; just downscore.
-        # You can also log `e` here.
-        return 0.0
-
-def score_face(video_path: Path, ref_face_path: Optional[Path]) -> float:
-    """
-    Face identity consistency:
-      - if ref_face_path is provided: use embedding-based identity check
-      - else: fallback to simple 'face presence' via Haar (or 0.5).
-    """
-    if ref_face_path is None:
-        # fallback: we don't know the reference → can't judge identity
-        # you can replace this with simple presence score if you want
-        return 0.5
-
-    try:
-        return compute_face_identity_score(ref_face_path, video_path)
-    except Exception:
-        # don't kill scoring if identity model fails
-        return 0.0
-
-def score_quality(video_path: Path) -> float:
-    """
-    Basic perceptual quality score in [0,1], combining:
-      - visual sharpness (Laplacian variance)
-      - brightness (mean intensity)
-      - motion amount (some movement is good)
-      - freeze ratio (long static segments are bad)
-      - audio quality (loudness, silence, clipping)
-    """
-    frames = _sample_frames(video_path, max_frames=32)
-    if not frames:
-        return 0.0
-
-    sharp_vals = []
-    bright_vals = []
-
-    for frame in frames:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # Sharpness via Laplacian variance
-        lap = cv2.Laplacian(gray, cv2.CV_64F)
-        sharpness = float(lap.var())
-        sharp_vals.append(sharpness)
-
-        # Brightness via mean pixel value
-        brightness = float(gray.mean())
-        bright_vals.append(brightness)
-
-    avg_sharp = float(np.mean(sharp_vals))
-    avg_bright = float(np.mean(bright_vals))
-
-    # Map sharpness to [0,1]
-    #  - below 50: very blurry -> 0
-    #  - 50-300: ramp to 1
-    #  - >300: cap at 1
-    if avg_sharp <= 50.0:
-        S_sharp = 0.0
-    elif avg_sharp >= 300.0:
-        S_sharp = 1.0
-    else:
-        S_sharp = (avg_sharp - 50.0) / (300.0 - 50.0)
-
-    # Map brightness to [0,1], prefer roughly [60, 200]
-    if avg_bright <= 20.0 or avg_bright >= 235.0:
-        S_bright = 0.0
-    elif 60.0 <= avg_bright <= 200.0:
-        S_bright = 1.0
-    elif avg_bright < 60.0:
-        S_bright = (avg_bright - 20.0) / (60.0 - 20.0)
-    else:  # > 200
-        S_bright = (235.0 - avg_bright) / (235.0 - 200.0)
-
-    # Motion + freeze
-    avg_motion, freeze_ratio = _compute_motion_and_freeze(frames)
-    # Map motion [0, 20] -> [0,1], clamp
-    S_motion = float(np.clip(avg_motion / 20.0, 0.0, 1.0))
-    # Freeze score: 1 when no frozen pairs, 0 when all pairs frozen
-    S_freeze = float(np.clip(1.0 - freeze_ratio, 0.0, 1.0))
-
-    # Audio quality
-    S_audio = score_audio_quality(video_path)
-
-    # Combine: tweak weights as you like
-    S_quality = (
-        0.3 * S_sharp    # detail / blur
-        + 0.15 * S_bright  # not too dark/bright
-        + 0.15 * S_motion  # some movement
-        + 0.15 * S_freeze  # no long freezes
-        + 0.25 * S_audio   # sound is important
-    )
-
-    return float(np.clip(S_quality, 0.0, 1.0))
-
+def _normalize_weights(results: dict[str, MetricResult]) -> dict[str, float]:
+    active_weights = {
+        name: metric_weights[name]
+        for name, res in results.items()
+        if res.available and name in metric_weights
+    }
+    total = sum(active_weights.values())
+    if total <= 0:
+        return {}
+    return {name: weight / total for name, weight in active_weights.items()}
 
 
 def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
-    S_text = score_text(e.text, e.language, e.video_path)
-    S_duration = score_duration(e.video_path, e.target_duration_sec)
-    S_latency = score_latency(e.latency_sec, target_duration_sec=e.target_duration_sec if e.target_duration_sec is not None else 8.0)
-    S_sync = score_sync(e.video_path)
-    S_face = score_face(e.video_path, e.ref_face_path)
-    S_quality = score_quality(e.video_path)
+    sync_res, _ = metric_syncnet(e.video_path)
+    arc_res, _ = metric_arcface_identity(e.image_path, e.video_path)
+    quality_res, _ = metric_quality(e.video_path)
+    # head_res, _ = metric_head_jerk(e.video_path)
+    # blink_res, _ = metric_blink_rate(e.video_path)
+    # flow_res, _ = metric_raft_flow(e.video_path)
+    # lpips_res, _ = metric_lpips(e.video_path)
+    latency_res, _ = metric_latency(e.latency_sec)
 
+    results = {
+        "syncnet": sync_res,
+        "arcface": arc_res,
+        "quality": quality_res,
+        # "head_jerk": head_res,
+        # "blink": blink_res,
+        # "flow": flow_res,
+        # "lpips": lpips_res,
+        "latency": latency_res,
+    }
+    applied_weights = _normalize_weights(results)
+    composite = sum(results[name].score * applied_weights.get(name, 0.0) for name in results)
 
-    composite = (
-        metric_weights["text"] * S_text
-        + metric_weights["duration"] * S_duration
-        + metric_weights["latency"] * S_latency
-        + metric_weights["sync"] * S_sync
-        + metric_weights["face"] * S_face
-        + metric_weights["quality"] * S_quality
-    )
-
-    reason = (
-        f"S_text={S_text:.2f}, "
-        f"S_duration={S_duration:.2f}, "
-        f"S_latency={S_latency:.2f}, "
-        f"S_sync={S_sync:.2f}, "
-        f"S_face={S_face:.2f}, "
-        f"S_quality={S_quality:.2f}"
-    )
+    reason_parts = []
+    for name, res in results.items():
+        raw_str = res.raw if res.raw is not None else "-"
+        reason_parts.append(f"{name}={res.score:.2f} ({raw_str}; {res.detail})")
+    reason = "; ".join(reason_parts)
 
     return MinerEvalScores(
-        S_text=S_text,
-        S_duration=S_duration,
-        S_latency=S_latency,
-        S_sync=S_sync,
-        S_face=S_face,
-        S_quality=S_quality,
-        composite=composite,
+        composite=float(composite),
         reason=reason,
+        S_syncnet=sync_res.score,
+        S_arcface=arc_res.score,
+        S_quality=quality_res.score,
+        # S_head_jerk=head_res.score,
+        # S_blink=blink_res.score,
+        # S_flow=flow_res.score,
+        # S_lpips=lpips_res.score,
+        S_latency=latency_res.score,
     )
-
-
-def normalize_composite(scores: list[MinerEvalScores]) -> dict[str, float]:
-    vals = [s.composite for s in scores if s.composite > 0]
-    if not vals:
-        return {0.0 for s in scores}
-
-    max_val = max(vals)
-    if max_val <= 0:
-        return {0.0 for s in scores}
-
-    return {s.composite / max_val for s in scores}

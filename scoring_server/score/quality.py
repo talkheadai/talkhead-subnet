@@ -4,6 +4,7 @@ import numpy as np
 from pathlib import Path
 import cv2
 
+
 def _compute_motion_and_freeze(frames: list[np.ndarray]) -> tuple[float, float]:
     """
     Compute:
@@ -119,3 +120,66 @@ def score_audio_quality(video_path: Path) -> float:
     # Combine audio metrics
     S_audio = 0.5 * S_loud + 0.3 * S_silence + 0.2 * S_clip
     return float(np.clip(S_audio, 0.0, 1.0))
+
+
+def score_quality(video_path: Path) -> float:
+    """
+    Basic perceptual quality score in [0,1], combining:
+      - visual sharpness (Laplacian variance)
+      - brightness (mean intensity)
+      - motion amount (some movement is good)
+      - freeze ratio (long static segments are bad)
+      - audio quality (loudness, silence, clipping)
+    """
+    frames = _sample_frames(video_path, max_frames=32)
+    if not frames:
+        return 0.0
+
+    sharp_vals = []
+    bright_vals = []
+
+    for frame in frames:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        lap = cv2.Laplacian(gray, cv2.CV_64F)
+        sharpness = float(lap.var())
+        sharp_vals.append(sharpness)
+
+        brightness = float(gray.mean())
+        bright_vals.append(brightness)
+
+    avg_sharp = float(np.mean(sharp_vals))
+    avg_bright = float(np.mean(bright_vals))
+
+    # Map sharpness to [0,1]
+    if avg_sharp <= 50.0:
+        S_sharp = 0.0
+    elif avg_sharp >= 300.0:
+        S_sharp = 1.0
+    else:
+        S_sharp = (avg_sharp - 50.0) / (300.0 - 50.0)
+
+    # Map brightness to [0,1], prefer roughly [60, 200]
+    if avg_bright <= 20.0 or avg_bright >= 235.0:
+        S_bright = 0.0
+    elif 60.0 <= avg_bright <= 200.0:
+        S_bright = 1.0
+    elif avg_bright < 60.0:
+        S_bright = (avg_bright - 20.0) / (60.0 - 20.0)
+    else:  # > 200
+        S_bright = (235.0 - avg_bright) / (235.0 - 200.0)
+
+    avg_motion, freeze_ratio = _compute_motion_and_freeze(frames)
+    S_motion = float(np.clip(avg_motion / 20.0, 0.0, 1.0))
+    S_freeze = float(np.clip(1.0 - freeze_ratio, 0.0, 1.0))
+
+    S_audio = score_audio_quality(video_path)
+
+    S_quality = (
+        0.3 * S_sharp
+        + 0.15 * S_bright
+        + 0.15 * S_motion
+        + 0.15 * S_freeze
+        + 0.25 * S_audio
+    )
+
+    return float(np.clip(S_quality, 0.0, 1.0))

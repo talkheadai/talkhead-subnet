@@ -12,7 +12,6 @@ INFERENCE_SCRIPT = SADTALKER_ROOT / "inference.py"
 def generate_video_with_sadtalker(
     image_bytes: bytes,
     audio_path: Path,
-    duration_sec: Optional[float] = None,
 ) -> bytes:
     """
     Wrap SadTalker's CLI:

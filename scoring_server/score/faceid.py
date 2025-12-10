@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 import insightface
 import torch
+from loguru import logger
 
 
 @lru_cache(maxsize=1)
@@ -25,6 +26,13 @@ def _load_image(path: Path) -> np.ndarray:
     img = cv2.imread(str(path))
     if img is None:
         raise RuntimeError(f"Failed to read image at {path}")
+    logger.info(f"img.ndim: {img.ndim}")
+    logger.info(f"img.shape: {img.shape}")
+    # InsightFace expects 3-channel BGR input; some PNGs are BGRA or grayscale.
+    if img.ndim == 2:
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    elif img.shape[2] == 4:
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
     return img
 
 
@@ -35,6 +43,12 @@ def _get_face_embedding(img: np.ndarray) -> np.ndarray | None:
     """
     app = _get_face_app()
     faces = app.get(img)
+    if not faces:
+        # Some close-cropped faces fail detection; pad to give detector context.
+        h, w = img.shape[:2]
+        pad = max(32, int(0.1 * max(h, w)))
+        padded = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=[0, 0, 0])
+        faces = app.get(padded)
     if not faces:
         return None
 
