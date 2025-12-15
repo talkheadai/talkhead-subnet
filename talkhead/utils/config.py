@@ -198,7 +198,7 @@ def add_validator_args(cls, parser):
         "--neuron.sample_size",
         type=int,
         help="The number of miners to query in a single step.",
-        default=50,
+        default=4,
     )
 
     parser.add_argument(
@@ -246,6 +246,35 @@ def add_validator_args(cls, parser):
         default="opentensor-dev",
     )
 
+    # --- Blended Ranking Reward System Arguments ---
+    # Note: apply_ranking is always enabled (removed as configurable option)
+    parser.add_argument(
+        '--neuron.top_miner_cap',
+        type=int,
+        help="The maximum number of top miners to consider for ranking rewards.",
+        default=2
+    )
+    parser.add_argument(
+        '--neuron.decay_rate',
+        type=float,
+        help="The decay rate for the exponential ranking reward curve.",
+        default=0.05
+    )
+    parser.add_argument(
+        '--neuron.blend_factor',
+        type=float,
+        help="The blend factor between rank-based reward and original score (e.g., 0.7 means 70% rank, 30% original score).",
+        default=0.7
+    )
+    
+    # --- Emission Burn Configuration ---
+    parser.add_argument(
+        '--neuron.burn_fraction',
+        type=float,
+        help="Fraction of emissions to burn to the burn UID when miners qualify.",
+        default=0
+    )
+    # Note: burn_uid is hardcoded to 0 and not configurable
 
 def config(cls):
     """

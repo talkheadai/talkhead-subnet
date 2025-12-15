@@ -60,3 +60,12 @@ def get_random_uids(self, k: int, exclude: List[int] = None) -> np.ndarray:
         )
     uids = np.array(random.sample(available_uids, k))
     return uids
+
+def get_available_uids(self) -> np.ndarray:
+    """Returns all available uids from the metagraph.
+    Args:
+        self (:obj:`bittensor.neuron.Neuron`): The neuron object which contains all the necessary state for the validator.
+    Returns:
+        uids (np.ndarray): All available uids.
+    """
+    return np.array([uid for uid in range(self.metagraph.n.item()) if check_uid_availability(self.metagraph, uid, self.config.neuron.vpermit_tao_limit)])

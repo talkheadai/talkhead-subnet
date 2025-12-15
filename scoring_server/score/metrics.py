@@ -404,27 +404,38 @@ def metric_raft_flow(video_path: Path, target: float = 2.8) -> Tuple[MetricResul
     ), avg_err
 
 
-def metric_latency(latency_sec: float, latency_cap: float = 60.0) -> Tuple[MetricResult, Optional[float]]:
+def metric_latency(latency_sec: float, video_duration: float, latency_cap: float = 60.0) -> Tuple[MetricResult, Optional[float]]:
     """
     Metric 7: Latency.
-    - > latency_cap: 0
-    - <= latency_cap: linear ramp from 1 to 0
+    - latency_sec >= latency_cap: 0
+    - latency_sec < latency_cap: reward in [0, 1] where longer latency and shorter videos both reduce the score.
     """
-    if latency_sec > latency_cap:
+    if video_duration is None or video_duration <= 0:
+        return MetricResult(
+            score=0.0,
+            raw=None,
+            available=True,
+            detail="video duration not available",
+        ), None
+
+    if latency_sec >= latency_cap:
         score = 0.0
         return MetricResult(
             score=score,
             raw=latency_sec,
             available=True,
-            detail=f"latency > {latency_cap}s",
+            detail=f"latency >= {latency_cap}s",
         ), score
 
-    score = 1.0 - (latency_sec / latency_cap)
+    latency_factor = _clamp(1.0 - (latency_sec / latency_cap))
+    duration_factor = _clamp(video_duration / latency_cap)
+    score = _clamp(latency_factor * duration_factor)
+
     return MetricResult(
         score=score,
         raw=latency_sec,
         available=True,
-        detail=f"latency <= {latency_cap}s",
+        detail=f"latency factor {latency_factor:.2f}, duration factor {duration_factor:.2f}",
     ), score
 
 

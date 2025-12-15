@@ -13,7 +13,7 @@ from score.metrics import (
     metric_lpips,
     metric_latency,
 )
-
+from utils.media import probe_duration
 
 @dataclass
 class MinerEvalInput:
@@ -60,7 +60,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     # blink_res, _ = metric_blink_rate(e.video_path)
     # flow_res, _ = metric_raft_flow(e.video_path)
     # lpips_res, _ = metric_lpips(e.video_path)
-    latency_res, _ = metric_latency(e.latency_sec)
+    latency_res, _ = metric_latency(e.latency_sec, probe_duration(e.video_path))
 
     results = {
         "syncnet": sync_res,

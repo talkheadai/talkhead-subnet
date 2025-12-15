@@ -21,8 +21,8 @@ import numpy as np
 import bittensor as bt
 
 from talkhead.protocol import TalkHeadSynapse
-from talkhead.validator.reward import get_rewards
-from talkhead.utils.uids import get_random_uids
+from talkhead.validator.reward import get_rewards, apply_blended_rank
+from talkhead.utils.uids import get_available_uids
 from talkhead.constants import TALKHEAD_SERVER_ENDPOINT, DENDRITE_TIMEOUT
 import requests
 import base64
@@ -37,41 +37,69 @@ async def forward(self):
         self (:obj:`bittensor.neuron.Neuron`): The neuron object which contains all the necessary state for the validator.
 
     """
-    # TODO(developer): Define how the validator selects a miner to query, how often, etc.
-    # get_random_uids is an example method, but you can replace it with your own.
-    # miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
-    miner_uids = [219]
+    
+    miner_uids = get_available_uids(self)
+    bt.logging.info(f"Available miners list length: {len(miner_uids)}")
 
-    # Fetch the challenge from the talkhead server
-    response = requests.get(TALKHEAD_SERVER_ENDPOINT + "/challenge")
-    challenge = response.json()
+    # randomly shuffle the available miners list.
+    np.random.shuffle(miner_uids)
+    
+    total_rewards = []
+    total_detailed_metrics = []
+    for i in range(0, max(len(miner_uids), 4), 4):
+        selected_miner_uids = miner_uids[i:min(i + 4, len(miner_uids))]
+        bt.logging.info(f"Selected miner uids: {selected_miner_uids}")
 
-    bt.logging.info(f"🔵 Challenge text: {challenge['text']}  voice profile: {challenge['voice_profile']}")
-    bt.logging.info(f"Querying {len(miner_uids)} miners: {miner_uids}")
+        # Fetch the challenge from the talkhead server
+        response = requests.get(TALKHEAD_SERVER_ENDPOINT + "/challenge")
+        challenge = response.json()
 
-    synapse = TalkHeadSynapse(image_base64=challenge["image_base64"], text=challenge["text"], voice_profile=challenge["voice_profile"])
+        bt.logging.info(f"🏁 Fetched a challenge => text: \'{challenge['text']}\' | voice_profile: \'{challenge['voice_profile']}\'")
+        bt.logging.info(f"Querying {len(selected_miner_uids)} miners; {selected_miner_uids}")
 
-    # The dendrite client queries the network.
-    responses = await self.dendrite(
-        # Send the query to selected miner axons in the network.
-        axons=[self.metagraph.axons[uid] for uid in miner_uids],
-        # Construct a dummy query. This simply contains a single integer.
-        synapse=synapse,
-        # All responses have the deserialize function called on them before returning.
-        # You are encouraged to define your own deserialization function.
-        deserialize=True,
-        timeout=DENDRITE_TIMEOUT,
+        synapse = TalkHeadSynapse(image_base64=challenge["image_base64"], text=challenge["text"], voice_profile=challenge["voice_profile"])
+
+        # The dendrite client queries the network.
+        responses = await self.dendrite(
+            # Send the query to selected miner axons in the network.
+            axons=[self.metagraph.axons[uid] for uid in selected_miner_uids],
+            # Construct a dummy query. This simply contains a single integer.
+            synapse=synapse,
+            # All responses have the deserialize function called on them before returning.
+            # You are encouraged to define your own deserialization function.
+            deserialize=True,
+            timeout=DENDRITE_TIMEOUT,
+        )
+
+        # Log the results for monitoring purposes.
+        bt.logging.info(f"🔵 Received responses: {responses}")
+
+        rewards, detailed_metrics = get_rewards(self, step=self.step, synapse=synapse, responses=responses)
+        bt.logging.info(f"🟣 Scored responses: {rewards}")
+
+        total_rewards.extend(rewards)
+        total_detailed_metrics.extend(detailed_metrics)
+
+    # Get burn configuration from config with defaults
+    burn_fraction = getattr(self.config.neuron, 'burn_fraction', 0)
+    burn_uid = 59  # Hardcoded: burn UID is always 59 and never configurable
+    keep_fraction = 1.0 - burn_fraction
+    
+    # Apply the blended ranking and quality threshold (always enabled).
+    bt.logging.debug("Applying blended ranking and quality threshold to post-penalty rewards.")
+    is_100_percent_burn = False
+    applied_rewards, selected_miner_uids, detailed_metrics, is_100_percent_burn = apply_blended_rank(
+        total_rewards,
+        total_detailed_metrics,
+        miner_uids,
+        top_miner_cap=self.config.neuron.top_miner_cap,
+        decay_rate=self.config.neuron.decay_rate,
+        blend_factor=self.config.neuron.blend_factor,
+        burn_uid=burn_uid,
     )
-
-    # Log the results for monitoring purposes.
-    bt.logging.info(f"🟢 Received responses: {responses}")
-
-    # TODO(developer): Define how the validator scores responses.
-    # Adjust the scores based on responses from miners.
-    rewards = get_rewards(self, step=self.step, synapse=synapse, responses=responses)
-
-    bt.logging.info(f"🟣 Scored responses: {rewards}")
+    bt.logging.debug(f"Applied blended ranking and quality threshold to post-penalty rewards. {applied_rewards}")
+    bt.logging.debug(f"Applied blended ranking and quality threshold to post-penalty rewards. {miner_uids}")
 
     # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
-    self.update_scores(rewards, miner_uids)
-    time.sleep(5)
+    self.update_scores(applied_rewards, miner_uids)
+    
