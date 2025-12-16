@@ -69,15 +69,14 @@ Key environment variables (override defaults as needed):
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `TALKHEAD_SERVER_ENDPOINT` | Challenge provider (`/challenge`) | `http://localhost:8000/challenge` |
-| `SCORING_SERVER_ENDPOINT` | Scoring API (`/score`) | `http://localhost:8100/generate` |
+| `TALKHEAD_SERVER_HOST` | Challenge provider host | `http://localhost:8000` |
+| `SCORING_SERVER_ENDPOINT` | Scoring API endpoint (`/score`) | `http://localhost:8100/generate` |
 | `DENDRITE_TIMEOUT` | Validator query timeout (seconds) | `120` |
 
 Validator reward knobs (CLI flags, defaults shown):
 - `--neuron.top_miner_cap 2` – how many miners are eligible for rank-based rewards.
 - `--neuron.decay_rate 0.05` – exponential decay applied to rank.
 - `--neuron.blend_factor 0.7` – blend between rank reward and raw score.
-- `--neuron.burn_fraction 0` – fraction of emissions burned to UID 59 when miners qualify.
 
 Validators will pull challenges, query miners, call the scoring API, then set weights each epoch.
 
@@ -113,7 +112,7 @@ Key environment variables (override defaults as needed):
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `MINER_SERVER_ENDPOINT` | Miner generation API (`/generate`) | `http://localhost:9000/generate` |
+| `MINER_SERVER_ENDPOINT` | generation API endpoint(`/generate`) | `http://localhost:9000/generate` |
 | `CLOUDFLARE_R2_BUCKET` / `CLOUDFLARE_R2_ACCESS_KEY_ID` / `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | R2 upload credentials (optional) | unset |
 | `CLOUDFLARE_R2_PUBLIC_BASE_URL` / `CLOUDFLARE_R2_ENDPOINT` or `CLOUDFLARE_R2_ACCOUNT_ID` | Public URL + endpoint for R2 | unset |
 ---

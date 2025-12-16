@@ -16,13 +16,15 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-
+import time
 import copy
 import numpy as np
 import asyncio
 import argparse
 import threading
+import requests
 import bittensor as bt
+from talkhead.constants import TALKHEAD_SERVER_HOST, BURN_RATIO, BURN_UID
 
 from typing import List, Union
 from traceback import print_exception
@@ -82,6 +84,12 @@ class BaseValidatorNeuron(BaseNeuron):
         self.is_running: bool = False
         self.thread: Union[threading.Thread, None] = None
         self.lock = asyncio.Lock()
+
+        # Burn configuration (defaults loaded from environment; refreshed via server)
+        self.burn_ratio = BURN_RATIO
+        self.burn_uid = BURN_UID
+        self._last_burn_refresh_time = 0.0
+        self._burn_refresh_interval = 300  # seconds
 
     def serve_axon(self):
         """Serve axon to enable external connections."""
@@ -155,6 +163,9 @@ class BaseValidatorNeuron(BaseNeuron):
                 # Sync metagraph and potentially set weights.
                 self.sync()
 
+                bt.logging.info(f"Sleeping for 60 seconds before next forward call")
+                time.sleep(60)
+
                 self.step += 1
 
         # If someone intentionally stops the validator, it'll safely terminate operations.
@@ -193,6 +204,53 @@ class BaseValidatorNeuron(BaseNeuron):
             self.thread.join(5)
             self.is_running = False
             bt.logging.debug("Stopped")
+
+    def refresh_burn_settings(self, force: bool = False):
+        """
+        Refresh burn ratio/UID from TALKHEAD_SERVER_HOST/burn with caching.
+        """
+        now = time.time()
+        if not force and (now - self._last_burn_refresh_time) < self._burn_refresh_interval:
+            return
+
+        try:
+            response = requests.get(f"{TALKHEAD_SERVER_HOST}/burn", timeout=5)
+            response.raise_for_status()
+            payload = response.json() or {}
+        except Exception as exc:
+            bt.logging.warning(f"Unable to refresh burn settings from server, using cached defaults. Error: {exc}")
+            self._last_burn_refresh_time = now
+            return
+
+        updated = False
+
+        new_ratio = payload.get("burn_ratio")
+        if new_ratio is not None:
+            try:
+                ratio_value = float(new_ratio)
+                if 0.0 <= ratio_value <= 1.0:
+                    if ratio_value != self.burn_ratio:
+                        updated = True
+                    self.burn_ratio = ratio_value
+                else:
+                    bt.logging.warning(f"Ignoring invalid burn_ratio outside [0,1]: {new_ratio}")
+            except (TypeError, ValueError):
+                bt.logging.warning(f"Ignoring non-numeric burn_ratio: {new_ratio}")
+
+        new_uid = payload.get("burn_uid")
+        if new_uid is not None:
+            try:
+                uid_value = int(new_uid)
+                if uid_value != self.burn_uid:
+                    updated = True
+                self.burn_uid = uid_value
+            except (TypeError, ValueError):
+                bt.logging.warning(f"Ignoring non-integer burn_uid: {new_uid}")
+
+        if updated:
+            bt.logging.info(f"Updated burn settings from server: ratio={self.burn_ratio}, uid={self.burn_uid}")
+
+        self._last_burn_refresh_time = now
 
     def __enter__(self):
         self.run_in_background_thread()
@@ -243,6 +301,23 @@ class BaseValidatorNeuron(BaseNeuron):
 
         bt.logging.debug("raw_weights", raw_weights)
         bt.logging.debug("raw_weight_uids", str(self.metagraph.uids.tolist()))
+
+        # Ensure burn config is up to date before applying it.
+        self.refresh_burn_settings()
+        burn_ratio = self.burn_ratio
+        burn_uid = self.burn_uid
+
+        if burn_ratio > 0:
+            if burn_uid < 0 or burn_uid >= self.metagraph.n:
+                bt.logging.warning(f"Burn UID {burn_uid} is outside the metagraph range; skipping burn application.")
+            else:
+                bt.logging.info(f"Burning {burn_ratio} of emissions to UID {burn_uid}")
+                burn_weights = np.zeros(self.metagraph.n, dtype=np.float32)
+                burn_weights[burn_uid] = burn_ratio
+                raw_weights = burn_weights + raw_weights * (1 - burn_ratio)
+
+        bt.logging.debug("raw_weights after burn", raw_weights)
+
         # Process the raw weights to final_weights via subtensor limitations.
         (
             processed_weight_uids,
@@ -316,7 +391,7 @@ class BaseValidatorNeuron(BaseNeuron):
         # Update the hotkeys.
         self.hotkeys = copy.deepcopy(self.metagraph.hotkeys)
 
-    def update_scores(self, rewards: np.ndarray, uids: List[int]):
+    def update_scores(self, rewards: np.ndarray, uids: np.ndarray):
         """Performs exponential moving average on the scores based on the rewards received from the miners."""
 
         # Check if rewards contains NaN values.
