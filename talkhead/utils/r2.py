@@ -6,6 +6,7 @@ import re
 import uuid
 from datetime import datetime
 from typing import Optional
+import bittensor as bt
 
 try:
     import boto3  # type: ignore[import]
@@ -21,7 +22,6 @@ except ImportError:  # pragma: no cover - boto3 is optional at runtime
     class ClientError(Exception):  # type: ignore
         """Fallback placeholder when botocore is missing."""
 
-logger = logging.getLogger(__name__)
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
@@ -63,11 +63,11 @@ def upload_video_base64_to_r2(
     """
 
     if not video_b64:
-        logger.warning("No video data provided for R2 upload.")
+        bt.logging.warning("No video data provided for R2 upload.")
         return None
 
     if boto3 is None:
-        logger.warning("boto3 is not installed; skipping R2 upload.")
+        bt.logging.warning("boto3 is not installed; skipping R2 upload.")
         return None
 
     bucket = os.getenv("CLOUDFLARE_R2_BUCKET")
@@ -77,7 +77,7 @@ def upload_video_base64_to_r2(
     endpoint_url = _get_endpoint()
 
     if not all([bucket, access_key, secret_key, public_base_url, endpoint_url]):
-        logger.warning(
+        bt.logging.warning(
             "Missing Cloudflare R2 configuration; bucket=%s endpoint=%s public_base_url=%s",
             bool(bucket),
             bool(endpoint_url),
@@ -88,7 +88,7 @@ def upload_video_base64_to_r2(
     try:
         video_bytes = base64.b64decode(video_b64)
     except (ValueError, binascii.Error) as err:
-        logger.error("Invalid video_base64 payload; unable to upload to R2: %s", err)
+        bt.logging.error("Invalid video_base64 payload; unable to upload to R2: %s", err)
         return None
 
     object_key = _build_object_key(prompt)
@@ -110,7 +110,7 @@ def upload_video_base64_to_r2(
             ContentType="video/mp4",
         )
     except (BotoCoreError, ClientError) as err:
-        logger.error("Failed to upload video to R2: %s", err)
+        bt.logging.error("Failed to upload video to R2: %s", err)
         return None
 
     return f"{public_base_url.rstrip('/')}/{object_key}"

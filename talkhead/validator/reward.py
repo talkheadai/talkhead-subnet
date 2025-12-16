@@ -36,7 +36,7 @@ def reward(step: int, synapse: TalkHeadSynapse, video_url: str, dendrite_process
     """
     if not video_url:
         bt.logging.error("Received response without video; assigning zero reward.")
-        return 0.0
+        return 0.0, {"reason": "Received response without video"}
 
     payload = {
         "text": synapse.text,
@@ -49,7 +49,7 @@ def reward(step: int, synapse: TalkHeadSynapse, video_url: str, dendrite_process
 
     try:
         scoring_response = requests.post(
-            SCORING_SERVER_ENDPOINT + "/score",
+            SCORING_SERVER_ENDPOINT,
             json=payload,
             timeout=60,
         )
@@ -57,16 +57,16 @@ def reward(step: int, synapse: TalkHeadSynapse, video_url: str, dendrite_process
         result = scoring_response.json()
     except requests.RequestException as err:
         bt.logging.error(f"Failed to score miner response: {err}")
-        return 0.0
+        return 0.0, {"reason": "Failed to score miner response"}
     except ValueError:
         bt.logging.error("Scoring server returned non-JSON response.")
-        return 0.0
+        return 0.0, {"reason": "Scoring server returned non-JSON response"}
 
     composite_score = result.get("composite")
     bt.logging.debug(f"Scoring server response => composite_score: {composite_score} | reason: {result.get('reason', 'No reason provided')}")
     if composite_score is None:
         bt.logging.error(f"Scoring server response missing 'composite': {result}")
-        return 0.0
+        return 0.0, {"reason": "Scoring server response missing 'composite'"}
 
     return float(composite_score), result
 
@@ -103,8 +103,8 @@ def apply_blended_rank(rewards: List[float], detailed_metrics: List[Dict], uids:
     Args:
         burn_uid: UID to receive burned emissions (always 59, hardcoded)
     """
-    # Convert uids to numpy array for consistent return type
-    uids = np.array(uids)
+    # Convert uids to numpy int32 array for consistent return type
+    uids = np.array(uids, dtype=np.int32)
     
     # Get global ranks (0 = best) based on the post-penalty rewards
     rewards = np.array(rewards)
@@ -147,7 +147,7 @@ def apply_blended_rank(rewards: List[float], detailed_metrics: List[Dict], uids:
         bt.logging.warning(f"All emissions will be burned to UID {burn_uid}")
         
         # Extend arrays to include burn UID
-        extended_uids = np.append(uids[within_cap_indices], burn_uid)
+        extended_uids = np.append(uids, burn_uid)
         extended_rewards = np.append(final_rewards, 1.0)  # All zeros except burn UID gets 1.0
         
         # Update detailed metrics to include burn UID

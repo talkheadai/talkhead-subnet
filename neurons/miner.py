@@ -82,7 +82,7 @@ class Miner(BaseMinerNeuron):
 
         try:
             response = requests.post(
-                MINER_SERVER_ENDPOINT + "/generate",
+                MINER_SERVER_ENDPOINT,
                 json=payload,
                 timeout=DENDRITE_TIMEOUT,
             )

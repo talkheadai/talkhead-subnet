@@ -23,7 +23,7 @@ import bittensor as bt
 from talkhead.protocol import TalkHeadSynapse
 from talkhead.validator.reward import get_rewards, apply_blended_rank
 from talkhead.utils.uids import get_available_uids
-from talkhead.constants import TALKHEAD_SERVER_ENDPOINT, DENDRITE_TIMEOUT
+from talkhead.constants import TALKHEAD_SERVER_HOST, DENDRITE_TIMEOUT
 import requests
 import base64
 
@@ -51,7 +51,7 @@ async def forward(self):
         bt.logging.info(f"Selected miner uids: {selected_miner_uids}")
 
         # Fetch the challenge from the talkhead server
-        response = requests.get(TALKHEAD_SERVER_ENDPOINT + "/challenge")
+        response = requests.get(f"{TALKHEAD_SERVER_HOST}/challenge")
         challenge = response.json()
 
         bt.logging.info(f"🏁 Fetched a challenge => text: \'{challenge['text']}\' | voice_profile: \'{challenge['voice_profile']}\'")
@@ -74,32 +74,30 @@ async def forward(self):
         # Log the results for monitoring purposes.
         bt.logging.info(f"🔵 Received responses: {responses}")
 
+        if len(responses) == 0:
+            bt.logging.warning("No responses received from miners")
+            continue
+
         rewards, detailed_metrics = get_rewards(self, step=self.step, synapse=synapse, responses=responses)
         bt.logging.info(f"🟣 Scored responses: {rewards}")
 
         total_rewards.extend(rewards)
         total_detailed_metrics.extend(detailed_metrics)
-
-    # Get burn configuration from config with defaults
-    burn_fraction = getattr(self.config.neuron, 'burn_fraction', 0)
-    burn_uid = 59  # Hardcoded: burn UID is always 59 and never configurable
-    keep_fraction = 1.0 - burn_fraction
     
     # Apply the blended ranking and quality threshold (always enabled).
     bt.logging.debug("Applying blended ranking and quality threshold to post-penalty rewards.")
     is_100_percent_burn = False
-    applied_rewards, selected_miner_uids, detailed_metrics, is_100_percent_burn = apply_blended_rank(
+    applied_rewards, uids, detailed_metrics, is_100_percent_burn = apply_blended_rank(
         total_rewards,
         total_detailed_metrics,
         miner_uids,
         top_miner_cap=self.config.neuron.top_miner_cap,
         decay_rate=self.config.neuron.decay_rate,
         blend_factor=self.config.neuron.blend_factor,
-        burn_uid=burn_uid,
+        burn_uid=self.burn_uid,
     )
     bt.logging.debug(f"Applied blended ranking and quality threshold to post-penalty rewards. {applied_rewards}")
-    bt.logging.debug(f"Applied blended ranking and quality threshold to post-penalty rewards. {miner_uids}")
+    bt.logging.debug(f"Applied blended ranking and quality threshold to post-penalty rewards. {uids}")
 
     # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
-    self.update_scores(applied_rewards, miner_uids)
-    
+    self.update_scores(applied_rewards, uids)

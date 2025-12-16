@@ -267,15 +267,6 @@ def add_validator_args(cls, parser):
         default=0.7
     )
     
-    # --- Emission Burn Configuration ---
-    parser.add_argument(
-        '--neuron.burn_fraction',
-        type=float,
-        help="Fraction of emissions to burn to the burn UID when miners qualify.",
-        default=0
-    )
-    # Note: burn_uid is hardcoded to 0 and not configurable
-
 def config(cls):
     """
     Returns the configuration object specific to this miner or validator after adding relevant arguments.

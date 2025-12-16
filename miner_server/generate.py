@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 from typing import Optional
-
+from loguru import logger
 from gtts import gTTS
 
 from sadtalker_backend import generate_video_with_sadtalker
@@ -40,7 +40,7 @@ def generate_talking_head(
     try:
         audio_path = switcher.generate_audio(text, voice_profile=voice_profile)
     except Exception as e:
-        raise Exception(f"Failed to generate audio: {e}")
+        logger.error(f"Failed to generate audio: {e}")
         audio_path = _synthesize_speech_gtts(text, language=language)
 
     # 2. SadTalker

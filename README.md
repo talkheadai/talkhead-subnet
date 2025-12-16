@@ -1,74 +1,51 @@
 <div align="center">
 
 # **TalkHead Subnet** <!-- omit in toc -->
-[![Discord Chat](https://img.shields.io/discord/308323056592486420.svg)](https://discord.gg/bittensor)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
-
----
-
-## The Incentivized Internet <!-- omit in toc -->
-
-[Discord](https://discord.gg/bittensor) • [Network](https://taostats.io/) • [Research](https://bittensor.com/whitepaper)
+[Discord](https://discord.com/channels/799672011265015819/1450185343205904565) • [Network](https://talkhead.ai/) • [Research](https://docs.google.com/document/d/1vOLAdBdgtxUn0n8izYjUQ4bS8DX6KhvUjvw9Zk3e28s/edit?usp=sharing)
 </div>
 
 ---
 - [About](#about)
-- [Introduction](#introduction)
-- [Installation](#installation)
-  - [Before you proceed](#before-you-proceed)
-  - [Install](#install)
-- [Writing your own incentive mechanism](#writing-your-own-incentive-mechanism)
-- [Writing your own subnet API](#writing-your-own-subnet-api)
-- [Subnet Links](#subnet-links)
+- [How it works](#how-it-works)
+- [Requirements](#requirements)
+- [Validator Setup & Run](#validator-setup--run)
+- [Configure Validator](#configure-validator)
+- [Miner Setup & Run](#miner-setup--run)
+- [Configure Miner](#configure-miner)
+- [Rewards and scoring](#rewards-and-scoring)
 - [License](#license)
 
 ---
 ## About
 
-**TalkHead Subnet** is a Bittensor subnet focused on generating high-quality talking head avatars. This subnet incentivizes miners to produce realistic, synchronized talking head videos from audio input and reference images, enabling applications in virtual avatars, video generation, and AI-driven content creation.
+TalkHead is a Bittensor subnet that incentivizes miners to generate high-quality, lip-synced talking-head video clips from text plus a reference image (and optional voice profile). Validators evaluate realism, identity preservation, and latency, then set on-chain weights based on the composite score.
 
-The subnet operates on the Bittensor blockchain, where:
-- **Subnet miners** generate talking head videos based on validator requests
-- **Subnet validators** evaluate the quality and accuracy of generated videos and distribute rewards accordingly
-
-This creates a decentralized marketplace for talking head generation services, where the best-performing miners are rewarded with TAO tokens based on the quality of their outputs.
+The repo ships both the blockchain-facing neurons (miner/validator) and the off-chain services used to generate and score videos.
 
 ---
+## How it works
 
-## Introduction
-
-**IMPORTANT**: If you are new to Bittensor subnets, read this section before proceeding to [Installation](#installation) section. 
-
-The Bittensor blockchain hosts multiple self-contained incentive mechanisms called **subnets**. Subnets are playing fields in which:
-- Subnet miners who produce value, and
-- Subnet validators who produce consensus
-
-determine together the proper distribution of TAO for the purpose of incentivizing the creation of value, i.e., generating digital commodities, such as intelligence or data. 
-
-Each subnet consists of:
-- Subnet miners and subnet validators.
-- A protocol using which the subnet miners and subnet validators interact with one another. This protocol is part of the incentive mechanism.
-- The Bittensor API using which the subnet miners and subnet validators interact with Bittensor's onchain consensus engine [Yuma Consensus](https://bittensor.com/documentation/validating/yuma-consensus). The Yuma Consensus is designed to drive these actors: subnet validators and subnet miners, into agreement on who is creating value and what that value is worth. 
-
-This subnet is built using the Bittensor subnet template and consists of three primary files:
-1. `template/protocol.py`: Contains the definition of the protocol used by subnet miners and subnet validators for talking head generation requests.
-2. `neurons/miner.py`: Script that defines the subnet miner's behavior, i.e., how the subnet miner generates talking head videos in response to validator requests.
-3. `neurons/validator.py`: This script defines the subnet validator's behavior, i.e., how the subnet validator requests talking head generation from miners and evaluates the quality of responses.
-
+- **Forward**: Validators query miners with a TalkHead Synapse, which carries `image_base64`, `text`, and `voice_profile`.
+- **Generate**: Miners forward the TalkHead Synapse to their own talking-head video generation API to render a clip, upload it to Cloudflare R2, and return a public video URL.
+- **Score**: Validators send the video URL to the scoring server, which computes quality metrics (sync, identity, motion, latency, etc.) and a composite score.
+- **Reward**: Scores are blended with rank-based decay and an optional emission burn before updating validator weights on-chain.
 ---
+## Requirements
 
-## Installation
+- Python 3.10+ and a Linux host with CUDA-capable GPU. See `min_compute.yml` for suggested CPU/GPU/RAM/network specs.
+- `ffmpeg`/`ffprobe` and `g++` installed system-wide.
+- Optional: Cloudflare R2 credentials if you want miners to upload clips (`CLOUDFLARE_R2_*`), Hugging Face CLI for Piper voices, CUDA-enabled onnxruntime for GPU scoring.
 
-### Before you proceed
-Before you proceed with the installation of the subnet, note the following: 
+> [!NOTE]
+> The entire project was tested on an RTX 4090 with no errors observed.
+---
+## Validator Setup & Run
 
-- Use these instructions to run your subnet locally for your development and testing, or on Bittensor testnet or on Bittensor mainnet. 
-- **IMPORTANT**: We **strongly recommend** that you first run your subnet locally and complete your development and testing before running the subnet on Bittensor testnet. Furthermore, make sure that you next run your subnet on Bittensor testnet before running it on the Bittensor mainnet.
-- You can run your subnet either as a subnet owner, or as a subnet validator or as a subnet miner. 
-- **IMPORTANT:** Make sure you are aware of the minimum compute requirements for your subnet. See the [Minimum compute YAML configuration](./min_compute.yml).
-- Note that installation instructions differ based on your situation: For example, installing for local development and testing will require a few additional steps compared to installing for testnet. Similarly, installation instructions differ for a subnet owner vs a validator or a miner. 
+You can run your own scoring server using the [scoring_server installation guide](./scoring_server/README.md).
 
-### Install
+### Set up a validator neuron
+
+From repo root:
 
 ```bash
 python -m venv .venv
@@ -76,132 +53,78 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+### Run a validator neuron
+```bash
+python neurons/validator.py --wallet.name [your_wallet_name] --wallet.hotkey [your_wallet_hotkey]
+```
+
+Using pm2
+```bash
+pm2 start neurons/validator.py -- --wallet.name [your_wallet_name] --wallet.hotkey [your_wallet_hotkey]
+```
+
+### Configure Validator
+
+Key environment variables (override defaults as needed):
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `TALKHEAD_SERVER_HOST` | Challenge provider host | `http://localhost:8000` |
+| `SCORING_SERVER_ENDPOINT` | Scoring API endpoint (`/score`) | `http://localhost:8100/generate` |
+| `DENDRITE_TIMEOUT` | Validator query timeout (seconds) | `120` |
+
+Validator reward knobs (CLI flags, defaults shown):
+- `--neuron.top_miner_cap 2` – how many miners are eligible for rank-based rewards.
+- `--neuron.decay_rate 0.05` – exponential decay applied to rank.
+- `--neuron.blend_factor 0.7` – blend between rank reward and raw score.
+
+Validators will pull challenges, query miners, call the scoring API, then set weights each epoch.
+
+
+## Miner Setup & Run
+
+Run a miner server using the [miner_server installation guide](./miner_server/README.md).
+
+### Set up a miner neuron
+
+From repo root:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+### Run a miner neuron
+```bash
+python neurons/miner.py --wallet.name [your_wallet_name] --wallet.hotkey [your_wallet_hotkey]
+```
+
+Using pm2
+```bash
+pm2 start neurons/miner.py -- --wallet.name [your_wallet_name] --wallet.hotkey [your_wallet_hotkey]
+```
+
+---
+## Configure Miner
+
+Key environment variables (override defaults as needed):
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `MINER_SERVER_ENDPOINT` | generation API endpoint(`/generate`) | `http://localhost:9000/generate` |
+| `CLOUDFLARE_R2_BUCKET` / `CLOUDFLARE_R2_ACCESS_KEY_ID` / `CLOUDFLARE_R2_SECRET_ACCESS_KEY` | R2 upload credentials (optional) | unset |
+| `CLOUDFLARE_R2_PUBLIC_BASE_URL` / `CLOUDFLARE_R2_ENDPOINT` or `CLOUDFLARE_R2_ACCOUNT_ID` | Public URL + endpoint for R2 | unset |
 ---
 
-## Writing your own incentive mechanism
+## Rewards and scoring
 
-The TalkHead subnet uses a custom incentive mechanism to evaluate and reward talking head generation. The key files that define this mechanism are:
+- Scoring uses `scoring_server` metrics: SyncNet confidence, ArcFace identity, head jerk, latency bonus, and LPIPS perceptual quality (when deps are available).
+- `apply_blended_rank()` caps to the top `--neuron.top_miner_cap` miners, blends rank-based decay with raw scores, and optionally burns emissions to UID 0 when no miner qualifies.
+- Rewards feed into the validator’s exponential moving average before setting weights on-chain.
 
-- `template/protocol.py`: Contains the definition of the wire-protocol used by miners and validators for talking head generation requests and responses.
-- `neurons/miner.py`: Script that defines the miner's behavior, i.e., how the miner generates talking head videos in response to validator requests.
-- `neurons/validator.py`: This script defines the validator's behavior, i.e., how the validator requests talking head generation from miners and evaluates responses.
-- `template/validator/forward.py`: Contains the definition of the validator's forward pass, which orchestrates the querying and evaluation process.
-- `template/validator/reward.py`: Contains the definition of how validators reward miner responses based on video quality, synchronization, and realism.
-
-These files contain detailed documentation and TODO markers indicating sections that should be customized for your specific talking head generation requirements.
 ---
-
-# Writing your own subnet API
-To leverage the abstract `SubnetsAPI` in Bittensor, you can implement a standardized interface. This interface is used to interact with the Bittensor network and can be used by a client to interact with the subnet through its exposed axons.
-
-What does Bittensor communication entail? Typically two processes, (1) preparing data for transit (creating and filling `synapse`s) and (2), processing the responses received from the `axon`(s).
-
-This protocol uses a handler registry system to associate bespoke interfaces for subnets by implementing two simple abstract functions:
-- `prepare_synapse`
-- `process_responses`
-
-These can be implemented as extensions of the generic `SubnetsAPI` interface.  E.g.:
-
-
-This is abstract, generic, and takes(`*args`, `**kwargs`) for flexibility. See the extremely simple base class:
-```python
-class SubnetsAPI(ABC):
-    def __init__(self, wallet: "bt.wallet"):
-        self.wallet = wallet
-        self.dendrite = bt.dendrite(wallet=wallet)
-
-    async def __call__(self, *args, **kwargs):
-        return await self.query_api(*args, **kwargs)
-
-    @abstractmethod
-    def prepare_synapse(self, *args, **kwargs) -> Any:
-        """
-        Prepare the synapse-specific payload.
-        """
-        ...
-
-    @abstractmethod
-    def process_responses(self, responses: List[Union["bt.Synapse", Any]]) -> Any:
-        """
-        Process the responses from the network.
-        """
-        ...
-
-```
-
-
-Here is a toy example:
-
-```python
-from bittensor.subnets import SubnetsAPI
-from MySubnet import MySynapse
-
-class MySynapseAPI(SubnetsAPI):
-    def __init__(self, wallet: "bt.wallet"):
-        super().__init__(wallet)
-        self.netuid = 99
-
-    def prepare_synapse(self, prompt: str) -> MySynapse:
-        # Do any preparatory work to fill the synapse
-        data = do_prompt_injection(prompt)
-
-        # Fill the synapse for transit
-        synapse = StoreUser(
-            messages=[data],
-        )
-        # Send it along
-        return synapse
-
-    def process_responses(self, responses: List[Union["bt.Synapse", Any]]) -> str:
-        # Look through the responses for information required by your application
-        for response in responses:
-            if response.dendrite.status_code != 200:
-                continue
-            # potentially apply post processing
-            result_data = postprocess_data_from_response(response)
-        # return data to the client
-        return result_data
-```
-
-You can use a subnet API to the registry by doing the following:
-1. Download and install the specific repo you want
-1. Import the appropriate API handler from bespoke subnets
-1. Make the query given the subnet specific API
-
-
-
-# Subnet Links
-In order to see real-world examples of subnets in-action, see the `subnet_links.py` document or access them from inside the `template` package by:
-```python
-import template
-template.SUBNET_LINKS
-[{'name': 'sn0', 'url': ''},
- {'name': 'sn1', 'url': 'https://github.com/opentensor/prompting/'},
- {'name': 'sn2', 'url': 'https://github.com/bittranslateio/bittranslate/'},
- {'name': 'sn3', 'url': 'https://github.com/gitphantomman/scraping_subnet/'},
- {'name': 'sn4', 'url': 'https://github.com/manifold-inc/targon/'},
-...
-]
-```
-
 ## License
-This repository is licensed under the MIT License.
-```text
-# The MIT License (MIT)
-# Copyright © 2023 Yuma Rao
-# Copyright © 2025 TalkHead AI
 
-# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
-# documentation files (the “Software”), to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
-# and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+MIT License © 2023 Yuma Rao, © 2025 TalkHead AI. See [LICENSE](./LICENSE).
 
-# The above copyright notice and this permission notice shall be included in all copies or substantial portions of
-# the Software.
-
-# THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO
-# THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
-```

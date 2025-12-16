@@ -2,6 +2,7 @@ from pathlib import Path
 import time
 
 from score.score import evaluate_miner, MinerEvalInput
+from utils.media import probe_duration
 from score.metrics import (
     metric_syncnet,
     metric_arcface_identity,
@@ -73,5 +74,5 @@ if __name__ == "__main__":
             print(f"S_lpips: {S_lpips} took {time.time() - start_time} seconds")
         if case == 8:  # latency
             start_time = time.time()
-            S_latency, _ = metric_latency(15.0)
+            S_latency, _ = metric_latency(15.0, probe_duration(Path("../test_data/talker.mp4")))
             print(f"S_latency: {S_latency} took {time.time() - start_time} seconds")
