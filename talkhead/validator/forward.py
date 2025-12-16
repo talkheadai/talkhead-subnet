@@ -51,7 +51,7 @@ async def forward(self):
         bt.logging.info(f"Selected miner uids: {selected_miner_uids}")
 
         # Fetch the challenge from the talkhead server
-        response = requests.get(TALKHEAD_SERVER_ENDPOINT + "/challenge")
+        response = requests.get(TALKHEAD_SERVER_ENDPOINT)
         challenge = response.json()
 
         bt.logging.info(f"🏁 Fetched a challenge => text: \'{challenge['text']}\' | voice_profile: \'{challenge['voice_profile']}\'")
