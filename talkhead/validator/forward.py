@@ -49,9 +49,12 @@ async def forward(self):
     for i in range(0, max(len(miner_uids), 4), 4):
         selected_miner_uids = miner_uids[i:min(i + 4, len(miner_uids))]
         bt.logging.info(f"Selected miner uids: {selected_miner_uids}")
-
+        
+        host = TALKHEAD_SERVER_HOST if self.config.network == "finney" else "http://125.136.64.90:42021"
         # Fetch the challenge from the talkhead server
-        response = requests.get(f"{TALKHEAD_SERVER_HOST}/challenge")
+        headers = self.build_signed_headers(f"/challenge")
+        response = requests.get(f"{host}/challenge", headers=headers, timeout=10)
+        response.raise_for_status()
         challenge = response.json()
 
         bt.logging.info(f"🏁 Fetched a challenge => text: \'{challenge['text']}\' | voice_profile: \'{challenge['voice_profile']}\'")

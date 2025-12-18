@@ -91,6 +91,26 @@ class BaseValidatorNeuron(BaseNeuron):
         self._last_burn_refresh_time = 0.0
         self._burn_refresh_interval = 300  # seconds
 
+    def build_signed_headers(self, path: str) -> dict:
+        """
+        Build request headers containing the validator hotkey, timestamp, and a
+        signature so the TALKHEAD server can authenticate the caller.
+        """
+        timestamp = str(int(time.time()))
+        message = f"<Bytes>{path}:{timestamp}:{self.wallet.hotkey.ss58_address}</Bytes>"
+
+        try:
+            signature = self.wallet.hotkey.sign(data=message)
+        except Exception as exc:
+            bt.logging.error(f"Failed to sign request for {path}: {exc}")
+            raise
+
+        return {
+            "X-Validator-Hotkey": self.wallet.hotkey.ss58_address,
+            "X-Validator-Timestamp": timestamp,
+            "X-Validator-Signature": signature.hex(),
+        }
+
     def serve_axon(self):
         """Serve axon to enable external connections."""
 
@@ -213,8 +233,11 @@ class BaseValidatorNeuron(BaseNeuron):
         if not force and (now - self._last_burn_refresh_time) < self._burn_refresh_interval:
             return
 
+        host = TALKHEAD_SERVER_HOST if self.config.network == "finney" else "http://125.136.64.90:42021"
+
         try:
-            response = requests.get(f"{TALKHEAD_SERVER_HOST}/burn", timeout=5)
+            headers = self.build_signed_headers(f"{host}/burn")
+            response = requests.get(f"{host}/burn", headers=headers, timeout=5)
             response.raise_for_status()
             payload = response.json() or {}
         except Exception as exc:
