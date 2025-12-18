@@ -6,5 +6,4 @@ metric_weights = {
     "blink": 0.0,
     "flow": 0.0,
     "lpips": 0.0,
-    "latency": 0.30,
 }

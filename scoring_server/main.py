@@ -55,7 +55,7 @@ class ScoreResponse(BaseModel):
     # S_blink: float
     # S_flow: float
     # S_lpips: float
-    S_latency: float
+    latency_ratio: Optional[float]
 
     reason: str  # human-readable summary string
 
@@ -141,7 +141,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
                 # S_blink=0.0,
                 # S_flow=0.0,
                 # S_lpips=0.0,
-                S_latency=0.0,
+                latency_ratio=None,
                 reason="incorrect audio",
             )
 
@@ -161,7 +161,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
             # S_blink=0.0,
             # S_flow=0.0,
             # S_lpips=0.0,
-            S_latency=0.0,
+            latency_ratio=None,
             reason="exception_during_evaluation",
         )
 
@@ -177,7 +177,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
         # S_blink=scores.S_blink,
         # S_flow=scores.S_flow,
         # S_lpips=scores.S_lpips,
-        S_latency=scores.S_latency,
+        latency_ratio=scores.latency_ratio,
         reason=scores.reason,
     )
 

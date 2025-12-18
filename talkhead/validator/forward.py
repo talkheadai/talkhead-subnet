@@ -21,7 +21,7 @@ import numpy as np
 import bittensor as bt
 
 from talkhead.protocol import TalkHeadSynapse
-from talkhead.validator.reward import get_rewards, apply_blended_rank
+from talkhead.validator.reward import get_rewards, apply_blended_rank, compute_latency_scores
 from talkhead.utils.uids import get_available_uids
 from talkhead.constants import TALKHEAD_SERVER_HOST, DENDRITE_TIMEOUT
 import requests
@@ -44,10 +44,11 @@ async def forward(self):
     # randomly shuffle the available miners list.
     np.random.shuffle(miner_uids)
     
-    total_rewards = []
+    total_composites = []
     total_detailed_metrics = []
-    for i in range(0, max(len(miner_uids), 4), 4):
-        selected_miner_uids = miner_uids[i:min(i + 4, len(miner_uids))]
+    total_latency_ratios = []
+    for i in range(0, max(len(miner_uids), self.config.neuron.sample_size), self.config.neuron.sample_size):
+        selected_miner_uids = miner_uids[i:min(i + self.config.neuron.sample_size, len(miner_uids))]
         bt.logging.info(f"Selected miner uids: {selected_miner_uids}")
 
         # Fetch the challenge from the talkhead server
@@ -78,17 +79,31 @@ async def forward(self):
             bt.logging.warning("No responses received from miners")
             continue
 
-        rewards, detailed_metrics = get_rewards(self, step=self.step, synapse=synapse, responses=responses)
-        bt.logging.info(f"🟣 Scored responses: {rewards}")
+        composites, detailed_metrics, latency_ratios = get_rewards(self, step=self.step, synapse=synapse, responses=responses)
+        bt.logging.info(f"🟣 Scored responses (composite, pre-latency): {composites}")
 
-        total_rewards.extend(rewards)
+        total_composites.extend(composites)
         total_detailed_metrics.extend(detailed_metrics)
+        total_latency_ratios.extend(latency_ratios)
     
+    # Apply latency scores globally across all collected miners before ranking.
+    latency_scores = compute_latency_scores(total_latency_ratios)
+    final_rewards = [composite * latency_score for composite, latency_score in zip(total_composites, latency_scores)]
+    bt.logging.debug(f"miner uids: {miner_uids}")
+    bt.logging.debug(f"total composites scores: {total_composites}")
+    bt.logging.debug(f"Latency scores: {latency_scores}")
+    bt.logging.debug(f"Final rewards: {final_rewards}")
+
+    for idx, metrics in enumerate(total_detailed_metrics):
+        metrics["composite_no_latency"] = float(total_composites[idx]) if idx < len(total_composites) else 0.0
+        metrics["latency_ratio"] = total_latency_ratios[idx] if idx < len(total_latency_ratios) else None
+        metrics["latency_score"] = float(latency_scores[idx]) if idx < len(latency_scores) else 0.0
+
     # Apply the blended ranking and quality threshold (always enabled).
     bt.logging.debug("Applying blended ranking and quality threshold to post-penalty rewards.")
     is_100_percent_burn = False
     applied_rewards, uids, detailed_metrics, is_100_percent_burn = apply_blended_rank(
-        total_rewards,
+        final_rewards,
         total_detailed_metrics,
         miner_uids,
         top_miner_cap=self.config.neuron.top_miner_cap,
@@ -96,8 +111,8 @@ async def forward(self):
         blend_factor=self.config.neuron.blend_factor,
         burn_uid=self.burn_uid,
     )
-    bt.logging.debug(f"Applied blended ranking and quality threshold to post-penalty rewards. {applied_rewards}")
-    bt.logging.debug(f"Applied blended ranking and quality threshold to post-penalty rewards. {uids}")
+    bt.logging.debug(f"Applied blended ranking uids: {uids}")
+    bt.logging.debug(f"Applied blended ranking rewards: {applied_rewards}")
 
     # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
     self.update_scores(applied_rewards, uids)

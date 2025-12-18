@@ -102,7 +102,8 @@ cp .env.example .env
   - optional `voice_profile` (Piper voice id; enables audio verification)
 - Response body:  
   - `composite`
-  - per-metric `S_` scores: `S_syncnet_confidence`, `S_lse`, `S_arcface`, `S_head_jerk`, `S_blink`, `S_flow`, `S_latency_bonus`, `S_lpips`
+  - per-metric `S_` scores: `S_syncnet`, `S_lse`, `S_arcface`, `S_head_jerk`, `S_blink`, `S_flow`, `S_lpips`
+  - `latency_ratio` (latency_sec / video_duration_sec)
   - `reason` (human-readable summary)
 
 ### Audio verification (voice_profile)

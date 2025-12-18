@@ -16,13 +16,13 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 import numpy as np
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 import bittensor as bt
 from talkhead.constants import SCORING_SERVER_ENDPOINT
 import requests
 from talkhead.protocol import TalkHeadSynapse
 
-def reward(step: int, synapse: TalkHeadSynapse, video_url: str, dendrite_process_time: float) -> Tuple[float, Dict]:
+def reward(step: int, synapse: TalkHeadSynapse, video_url: str, dendrite_process_time: float) -> Tuple[float, Dict, Optional[float]]:
     """
     Reward the miner response to the challenge request. This method returns a reward
     value for the miner, which is used to update the miner's score.
@@ -36,7 +36,7 @@ def reward(step: int, synapse: TalkHeadSynapse, video_url: str, dendrite_process
     """
     if not video_url:
         bt.logging.error("Received response without video; assigning zero reward.")
-        return 0.0, {"reason": "Received response without video"}
+        return 0.0, {"reason": "Received response without video"}, None
 
     payload = {
         "text": synapse.text,
@@ -57,25 +57,26 @@ def reward(step: int, synapse: TalkHeadSynapse, video_url: str, dendrite_process
         result = scoring_response.json()
     except requests.RequestException as err:
         bt.logging.error(f"Failed to score miner response: {err}")
-        return 0.0, {"reason": "Failed to score miner response"}
+        return 0.0, {"reason": "Failed to score miner response"}, None
     except ValueError:
         bt.logging.error("Scoring server returned non-JSON response.")
-        return 0.0, {"reason": "Scoring server returned non-JSON response"}
+        return 0.0, {"reason": "Scoring server returned non-JSON response"}, None
 
     composite_score = result.get("composite")
+    latency_ratio = result.get("latency_ratio")
     bt.logging.debug(f"Scoring server response => composite_score: {composite_score} | reason: {result.get('reason', 'No reason provided')}")
     if composite_score is None:
         bt.logging.error(f"Scoring server response missing 'composite': {result}")
-        return 0.0, {"reason": "Scoring server response missing 'composite'"}
+        return 0.0, {"reason": "Scoring server response missing 'composite'"}, None
 
-    return float(composite_score), result
+    return float(composite_score), result, latency_ratio
 
 def get_rewards(
     self,
     step: int,
     synapse: TalkHeadSynapse,
     responses: List[TalkHeadSynapse],
-) -> Tuple[np.ndarray, List[Dict]]:
+) -> Tuple[np.ndarray, List[Dict], List[Optional[float]]]:
     """
     Returns an array of rewards for the given query and responses.
 
@@ -86,10 +87,50 @@ def get_rewards(
     Returns:
     - np.ndarray: An array of rewards for the given query and responses.
     """
-    # Get all the reward results by iteratively calling your reward() function.
+    composites: List[float] = []
+    detailed_metrics: List[Dict] = []
+    latency_ratios: List[Optional[float]] = []
 
-    rewards, detailed_metrics = zip(*[reward(step, synapse, video_url, dendrite_process_time) for video_url, dendrite_process_time in responses])
-    return np.array(rewards), list(detailed_metrics)
+    for video_url, dendrite_process_time in responses:
+        composite, metrics, latency_ratio = reward(step, synapse, video_url, dendrite_process_time)
+        composites.append(composite)
+        detailed_metrics.append(metrics)
+        latency_ratios.append(latency_ratio)
+
+    return np.array(composites), detailed_metrics, latency_ratios
+
+def compute_latency_scores(latency_ratios: List[Optional[float]], latency_ratio_cap: float = 20.0) -> np.ndarray:
+    """
+    Map latency ratios (latency_sec / video_duration_sec) to [0, 1] where:
+    - 1.0 corresponds to the minimum observed ratio in the batch
+    - 0.0 corresponds to ratio >= latency_ratio_cap
+    """
+    if len(latency_ratios) == 0:
+        return np.array([])
+
+    valid_ratios = [r for r in latency_ratios if r is not None]
+    if not valid_ratios:
+        return np.zeros(len(latency_ratios))
+
+    min_ratio = min(valid_ratios)
+    if min_ratio >= latency_ratio_cap:
+        return np.zeros(len(latency_ratios))
+
+    scores: List[float] = []
+    for ratio in latency_ratios:
+        if ratio is None:
+            scores.append(0.0)
+            continue
+        if ratio <= min_ratio:
+            scores.append(1.0)
+            continue
+        if ratio >= latency_ratio_cap:
+            scores.append(0.0)
+            continue
+        scaled = 1.0 - (ratio - min_ratio) / (latency_ratio_cap - min_ratio)
+        scores.append(float(np.clip(scaled, 0.0, 1.0)))
+
+    return np.array(scores)
 
 def apply_blended_rank(rewards: List[float], detailed_metrics: List[Dict], uids: List[int], top_miner_cap: int, decay_rate: float, blend_factor: float, burn_uid: int) -> Tuple[np.ndarray, np.ndarray, List[Dict], bool]:
     """

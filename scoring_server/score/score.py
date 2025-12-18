@@ -11,7 +11,6 @@ from score.metrics import (
     metric_blink_rate,
     metric_raft_flow,
     metric_lpips,
-    metric_latency,
 )
 from utils.media import probe_duration
 
@@ -37,7 +36,7 @@ class MinerEvalScores:
     # S_blink: float
     # S_flow: float
     # S_lpips: float
-    S_latency: float
+    latency_ratio: float | None
 
 
 def _normalize_weights(results: dict[str, MetricResult]) -> dict[str, float]:
@@ -60,7 +59,10 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     # blink_res, _ = metric_blink_rate(e.video_path)
     # flow_res, _ = metric_raft_flow(e.video_path)
     # lpips_res, _ = metric_lpips(e.video_path)
-    latency_res, _ = metric_latency(e.latency_sec, probe_duration(e.video_path))
+    video_duration = probe_duration(e.video_path)
+    latency_ratio: float | None = None
+    if video_duration and video_duration > 0:
+        latency_ratio = e.latency_sec / video_duration
 
     results = {
         "syncnet": sync_res,
@@ -70,7 +72,6 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
         # "blink": blink_res,
         # "flow": flow_res,
         # "lpips": lpips_res,
-        "latency": latency_res,
     }
     applied_weights = _normalize_weights(results)
     composite = sum(results[name].score * applied_weights.get(name, 0.0) for name in results)
@@ -79,6 +80,10 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     for name, res in results.items():
         raw_str = res.raw if res.raw is not None else "-"
         reason_parts.append(f"{name}={res.score:.2f} ({raw_str}; {res.detail})")
+    if latency_ratio is not None:
+        reason_parts.append(f"latency_ratio={latency_ratio:.2f}")
+    else:
+        reason_parts.append("latency_ratio=unavailable")
     reason = "; ".join(reason_parts)
 
     return MinerEvalScores(
@@ -91,5 +96,5 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
         # S_blink=blink_res.score,
         # S_flow=flow_res.score,
         # S_lpips=lpips_res.score,
-        S_latency=latency_res.score,
+        latency_ratio=latency_ratio,
     )
