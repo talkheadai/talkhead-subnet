@@ -18,7 +18,7 @@
 ---
 ## About
 
-TalkHead is a Bittensor subnet that incentivizes miners to generate high-quality, lip-synced talking-head video clips from text plus a reference image (and optional voice profile). Validators evaluate realism, identity preservation, and latency, then set on-chain weights based on the composite score.
+TalkHead is a Bittensor subnet that incentivizes miners to generate high-quality, lip-synced talking-head video clips from text plus a reference image (and optional voice profile). Validators evaluate realism and identity preservation, then apply a latency bonus after quality scoring before setting on-chain weights.
 
 The repo ships both the blockchain-facing neurons (miner/validator) and the off-chain services used to generate and score videos.
 
@@ -27,7 +27,8 @@ The repo ships both the blockchain-facing neurons (miner/validator) and the off-
 
 - **Forward**: Validators query miners with a TalkHead Synapse, which carries `image_base64`, `text`, and `voice_profile`.
 - **Generate**: Miners forward the TalkHead Synapse to their own talking-head video generation API to render a clip, upload it to Cloudflare R2, and return a public video URL.
-- **Score**: Validators send the video URL to the scoring server, which computes quality metrics (sync, identity, motion, latency, etc.) and a composite score.
+- **Score**: Validators send the video URL to the scoring server, which computes quality metrics (sync, identity, motion, etc.) and returns a composite quality score.
+- **Latency bonus**: Validators apply a latency bonus separately using the dendrite processing time versus video duration; latency is not part of the composite.
 - **Reward**: Scores are blended with rank-based decay and an optional emission burn before updating validator weights on-chain.
 ---
 ## Requirements
@@ -119,7 +120,7 @@ Key environment variables (override defaults as needed):
 
 ## Rewards and scoring
 
-- Scoring uses `scoring_server` metrics: SyncNet confidence, ArcFace identity, head jerk, latency bonus, and LPIPS perceptual quality (when deps are available).
+- Composite quality score uses `scoring_server` metrics: SyncNet confidence, ArcFace identity, motion/quality checks (jerk/blink/flow/LPIPS when available). Latency is applied as a post-score bonus on the validator.
 - `apply_blended_rank()` caps to the top `--neuron.top_miner_cap` miners, blends rank-based decay with raw scores, and optionally burns emissions to UID 0 when no miner qualifies.
 - Rewards feed into the validator’s exponential moving average before setting weights on-chain.
 

@@ -33,7 +33,6 @@ class ScoreRequest(BaseModel):
     # Required evaluation fields
     text: str = Field(..., description="The text to score.")
     language: str = Field("en-US", description="The language to score.")
-    latency_sec: float = Field(..., description="The latency of the video in seconds.")
 
     video_url: str = Field(..., description="The URL of the video to score.")
 
@@ -55,7 +54,7 @@ class ScoreResponse(BaseModel):
     # S_blink: float
     # S_flow: float
     # S_lpips: float
-    latency_ratio: Optional[float]
+    duration_sec: Optional[float]
 
     reason: str  # human-readable summary string
 
@@ -109,13 +108,12 @@ def score(req: ScoreRequest) -> ScoreResponse:
         video_path = download_video_from_url(req.video_url)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"invalid video_url: {e}")
-    logger.info(f"🔵 Score request: {req.text} {req.language} {req.latency_sec} {req.video_url}  {req.voice_profile} {image_path} {video_path}")
+    logger.info(f"🔵 Score request: {req.text} {req.language} {req.video_url}  {req.voice_profile} {image_path} {video_path}")
 
     # 2. Build eval input for core scorer
     eval_input = MinerEvalInput(
         text=text,
         language=req.language,
-        latency_sec=req.latency_sec,
         video_path=video_path,
         image_path=image_path,
         voice_profile=req.voice_profile,
@@ -141,7 +139,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
                 # S_blink=0.0,
                 # S_flow=0.0,
                 # S_lpips=0.0,
-                latency_ratio=None,
+                duration_sec=None,
                 reason="incorrect audio",
             )
 
@@ -161,7 +159,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
             # S_blink=0.0,
             # S_flow=0.0,
             # S_lpips=0.0,
-            latency_ratio=None,
+            duration_sec=None,
             reason="exception_during_evaluation",
         )
 
@@ -177,7 +175,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
         # S_blink=scores.S_blink,
         # S_flow=scores.S_flow,
         # S_lpips=scores.S_lpips,
-        latency_ratio=scores.latency_ratio,
+        duration_sec=scores.video_duration,
         reason=scores.reason,
     )
 

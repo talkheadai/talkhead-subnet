@@ -18,7 +18,6 @@ from utils.media import probe_duration
 class MinerEvalInput:
     text: str
     language: str
-    latency_sec: float
     video_path: Path
     voice_profile: Optional[str] = None
     image_path: Path | None = None
@@ -36,7 +35,7 @@ class MinerEvalScores:
     # S_blink: float
     # S_flow: float
     # S_lpips: float
-    latency_ratio: float | None
+    video_duration: float | None
 
 
 def _normalize_weights(results: dict[str, MetricResult]) -> dict[str, float]:
@@ -60,9 +59,6 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     # flow_res, _ = metric_raft_flow(e.video_path)
     # lpips_res, _ = metric_lpips(e.video_path)
     video_duration = probe_duration(e.video_path)
-    latency_ratio: float | None = None
-    if video_duration and video_duration > 0:
-        latency_ratio = e.latency_sec / video_duration
 
     results = {
         "syncnet": sync_res,
@@ -80,10 +76,10 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     for name, res in results.items():
         raw_str = res.raw if res.raw is not None else "-"
         reason_parts.append(f"{name}={res.score:.2f} ({raw_str}; {res.detail})")
-    if latency_ratio is not None:
-        reason_parts.append(f"latency_ratio={latency_ratio:.2f}")
+    if video_duration is not None:
+        reason_parts.append(f"video_duration={video_duration:.2f}")
     else:
-        reason_parts.append("latency_ratio=unavailable")
+        reason_parts.append("video_duration=unavailable")
     reason = "; ".join(reason_parts)
 
     return MinerEvalScores(
@@ -96,5 +92,5 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
         # S_blink=blink_res.score,
         # S_flow=flow_res.score,
         # S_lpips=lpips_res.score,
-        latency_ratio=latency_ratio,
+        video_duration=video_duration,
     )
