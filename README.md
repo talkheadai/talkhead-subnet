@@ -69,7 +69,6 @@ Key environment variables (override defaults as needed):
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `TALKHEAD_SERVER_HOST` | Challenge provider host | `http://localhost:8000` |
 | `SCORING_SERVER_ENDPOINT` | Scoring API endpoint (`/score`) | `http://localhost:8100/generate` |
 | `DENDRITE_TIMEOUT` | Validator query timeout (seconds) | `120` |
 
