@@ -97,12 +97,13 @@ cp .env.example .env
 ### API contract (current)
 
 - Request body:  
-  - `text` (str), `language` (str, default `en-US`), `latency_sec` (float), `video_url` (str)
+  - `text` (str), `language` (str, default `en-US`), `video_url` (str)
   - optional `ref_face_url` or `ref_face_base64`
   - optional `voice_profile` (Piper voice id; enables audio verification)
 - Response body:  
   - `composite`
-  - per-metric `S_` scores: `S_syncnet_confidence`, `S_lse`, `S_arcface`, `S_head_jerk`, `S_blink`, `S_flow`, `S_latency_bonus`, `S_lpips`
+  - per-metric `S_` scores: `S_syncnet`, `S_lse`, `S_arcface`, `S_head_jerk`, `S_blink`, `S_flow`, `S_lpips`
+  - `duration_sec` (video duration in seconds, used by validators for latency bonus)
   - `reason` (human-readable summary)
 
 ### Audio verification (voice_profile)
@@ -130,8 +131,7 @@ in `main.ScoreRequest` and returns the composite scoring response.
 |4|Head jerk / smoothness|10%|≤ 0.12 rad/s³|Needs MediaPipe Pose; unavailable if missing.|
 |5|Blink rate naturalness|5%|10–22 blinks/min|Requires blink detector (OpenFace/EMOCA).|
 |6|Temporal consistency (RAFT)|5%|Warp error ≤ 2.8 px|Requires RAFT optical flow.|
-|7|Latency bonus|3%|≤ 8s, full at 5s|Linear bonus from 8s→5s.|
-|8|Self-perceptual quality (LPIPS)|2%|LPIPS ≤ 0.095|After 4× Real-ESRGAN; optional deps.|
+|7|Self-perceptual quality (LPIPS)|2%|LPIPS ≤ 0.095|After 4× Real-ESRGAN; optional deps.|
 
 If a metric’s dependency is missing, it is marked “unavailable” and its weight
 is re-normalized across the metrics that did run. The response returns the

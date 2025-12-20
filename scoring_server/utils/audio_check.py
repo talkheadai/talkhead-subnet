@@ -73,7 +73,7 @@ def verify_video_audio_matches_text(
     text: str,
     voice_profile: str,
     video_path: Path,
-    similarity_threshold: float = 0.97,
+    similarity_threshold: float = 0.96,
 ) -> tuple[bool, str]:
     """
     Generate audio from text + voice_profile (Piper) and compare to the video's audio.

@@ -1,10 +1,9 @@
 metric_weights = {
-    "syncnet": 0.30,
-    "arcface": 0.20,
-    "quality": 0.20,
+    "syncnet": 0.40,
+    "arcface": 0.30,
+    "quality": 0.30,
     "head_jerk": 0.0,
     "blink": 0.0,
     "flow": 0.0,
     "lpips": 0.0,
-    "latency": 0.30,
 }

@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 import numpy as np
 import cv2
 
-from score.lipsync import compute_lip_sync_score, run_syncnet
+from score.syncnet import compute_syncnet_score
 from score.faceid import _get_face_app, _load_image
 from score.quality import score_quality
 from utils.media import _sample_frames
@@ -32,12 +32,12 @@ def metric_syncnet(
     Metric 1: SyncNet confidence (reference-free by default).
     """
     try:
-        score = float(compute_lip_sync_score(video_path))
+        score = float(compute_syncnet_score(video_path))
         return MetricResult(
             score=score,
             raw=None,
             available=True,
-            detail="SyncNet confidence",
+            detail="SyncNet score",
         ), score
     except Exception as exc:  # noqa: BLE001
         return MetricResult(
@@ -402,42 +402,6 @@ def metric_raft_flow(video_path: Path, target: float = 2.8) -> Tuple[MetricResul
         available=True,
         detail=f"avg warping error px (target <= {target})",
     ), avg_err
-
-
-def metric_latency(latency_sec: float, video_duration: float, latency_cap: float = 60.0) -> Tuple[MetricResult, Optional[float]]:
-    """
-    Metric 7: Latency.
-    - latency_sec >= latency_cap: 0
-    - latency_sec < latency_cap: reward in [0, 1] where longer latency and shorter videos both reduce the score.
-    """
-    if video_duration is None or video_duration <= 0:
-        return MetricResult(
-            score=0.0,
-            raw=None,
-            available=True,
-            detail="video duration not available",
-        ), None
-
-    if latency_sec >= latency_cap:
-        score = 0.0
-        return MetricResult(
-            score=score,
-            raw=latency_sec,
-            available=True,
-            detail=f"latency >= {latency_cap}s",
-        ), score
-
-    latency_factor = _clamp(1.0 - (latency_sec / latency_cap))
-    duration_factor = _clamp(video_duration / latency_cap)
-    score = _clamp(latency_factor * duration_factor)
-
-    return MetricResult(
-        score=score,
-        raw=latency_sec,
-        available=True,
-        detail=f"latency factor {latency_factor:.2f}, duration factor {duration_factor:.2f}",
-    ), score
-
 
 def metric_lpips(video_path: Path, target: float = 0.095) -> Tuple[MetricResult, Optional[float]]:
     """

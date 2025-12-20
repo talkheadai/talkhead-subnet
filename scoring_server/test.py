@@ -11,19 +11,17 @@ from score.metrics import (
     metric_blink_rate,
     metric_raft_flow,
     metric_lpips,
-    metric_latency,
 )
 
 cases = [
     # 0, # full test
-    # 1, # syncnet only
-    2, # arcface only
+    1, # syncnet only
+    # 2, # arcface only
     # 3, # quality only
     # 4, # head jerk only
     # 5, # blink rate only
     # 6, # flow only 
     # 7, # lpips only
-    # 8, # latency only
 ]
 
 if __name__ == "__main__":
@@ -34,7 +32,6 @@ if __name__ == "__main__":
                 MinerEvalInput(
                     text="TalkHead Subnet is a Bittensor subnet focused on generating high-quality talking head avatars.",
                     language="en-US",
-                    latency_sec=25,
                     video_path=Path("../test_data/talker.mp4"),
                     image_path=Path("../test_data/talker.jpg"),
                     voice_profile="en_GB-alan-low",
@@ -72,7 +69,3 @@ if __name__ == "__main__":
             start_time = time.time()
             S_lpips, _ = metric_lpips(Path("../test_data/talker.mp4"))
             print(f"S_lpips: {S_lpips} took {time.time() - start_time} seconds")
-        if case == 8:  # latency
-            start_time = time.time()
-            S_latency, _ = metric_latency(15.0, probe_duration(Path("../test_data/talker.mp4")))
-            print(f"S_latency: {S_latency} took {time.time() - start_time} seconds")
