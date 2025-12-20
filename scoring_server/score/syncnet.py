@@ -62,7 +62,7 @@ def run_syncnet(
     return bool(success), float(best_confidence), float(best_min_dist)
 
 
-def compute_lip_sync_score(video_path: Path) -> float:
+def compute_syncnet_score(video_path: Path) -> float:
     """
     Use SyncNet to compute an audio-video sync score in [0,1].
 

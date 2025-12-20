@@ -75,10 +75,6 @@ async def forward(self):
         # Log the results for monitoring purposes.
         bt.logging.info(f"🔵 Received responses: {responses}")
 
-        if len(responses) == 0:
-            bt.logging.warning("No responses received from miners")
-            continue
-
         composites, detailed_metrics, latency_ratios = get_rewards(self, step=self.step, synapse=synapse, responses=responses)
         bt.logging.info(f"🟣 Scored responses (composite, pre-latency): {composites}")
 

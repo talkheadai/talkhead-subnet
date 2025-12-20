@@ -91,10 +91,17 @@ def get_rewards(
     latency_ratios: List[Optional[float]] = []
 
     for video_url, dendrite_process_time in responses:
-        composite, metrics, duration_sec = reward(step, synapse, video_url)
+        if video_url is None or dendrite_process_time is None:
+            bt.logging.warning(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
+            composite, metrics, duration_sec = 0.0, {"reason": "Invalid response"}, None
+        else:
+            composite, metrics, duration_sec = reward(step, synapse, video_url)
         composites.append(composite)
         detailed_metrics.append(metrics)
-        latency_ratios.append(dendrite_process_time / duration_sec)
+        if duration_sec == None or dendrite_process_time == None:
+            latency_ratios.append(0.0)
+        else:
+            latency_ratios.append(dendrite_process_time / duration_sec)
 
     return np.array(composites), detailed_metrics, latency_ratios
 

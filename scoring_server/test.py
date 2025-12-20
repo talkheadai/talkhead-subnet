@@ -15,8 +15,8 @@ from score.metrics import (
 
 cases = [
     # 0, # full test
-    # 1, # syncnet only
-    2, # arcface only
+    1, # syncnet only
+    # 2, # arcface only
     # 3, # quality only
     # 4, # head jerk only
     # 5, # blink rate only

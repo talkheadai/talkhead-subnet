@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 import numpy as np
 import cv2
 
-from score.lipsync import compute_lip_sync_score, run_syncnet
+from score.syncnet import compute_syncnet_score
 from score.faceid import _get_face_app, _load_image
 from score.quality import score_quality
 from utils.media import _sample_frames
@@ -32,12 +32,12 @@ def metric_syncnet(
     Metric 1: SyncNet confidence (reference-free by default).
     """
     try:
-        score = float(compute_lip_sync_score(video_path))
+        score = float(compute_syncnet_score(video_path))
         return MetricResult(
             score=score,
             raw=None,
             available=True,
-            detail="SyncNet confidence",
+            detail="SyncNet score",
         ), score
     except Exception as exc:  # noqa: BLE001
         return MetricResult(
