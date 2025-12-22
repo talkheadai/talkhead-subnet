@@ -36,7 +36,7 @@ from talkhead.base.utils.weight_utils import (
 )  # TODO: Replace when bittensor switches to numpy
 from talkhead.mock import MockDendrite
 from talkhead.utils.config import add_validator_args
-
+from talkhead.utils.git import check_and_update_code
 
 class BaseValidatorNeuron(BaseNeuron):
     """
@@ -171,6 +171,8 @@ class BaseValidatorNeuron(BaseNeuron):
         # This loop maintains the validator's operations until intentionally stopped.
         try:
             while True:
+                if self.config.network == "finney":
+                    check_and_update_code()
                 bt.logging.info(f"step({self.step}) block({self.block})")
 
                 # Run multiple forwards concurrently.

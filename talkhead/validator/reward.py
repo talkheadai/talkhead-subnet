@@ -18,11 +18,11 @@
 import numpy as np
 from typing import List, Tuple, Dict, Optional
 import bittensor as bt
-from talkhead.constants import SCORING_SERVER_ENDPOINT
+from talkhead.constants import SCORING_SERVER_ENDPOINT, TESTNET_SCORING_SERVER_ENDPOINT
 import requests
 from talkhead.protocol import TalkHeadSynapse
 
-def reward(step: int, synapse: TalkHeadSynapse, video_url: str) -> Tuple[float, Dict, Optional[float]]:
+def reward(self, step: int, synapse: TalkHeadSynapse, video_url: str) -> Tuple[float, Dict, Optional[float]]:
     """
     Reward the miner response to the challenge request. This method returns a reward
     value for the miner, which is used to update the miner's score.
@@ -46,10 +46,13 @@ def reward(step: int, synapse: TalkHeadSynapse, video_url: str) -> Tuple[float, 
         "voice_profile": synapse.voice_profile,
     }
 
+    url = SCORING_SERVER_ENDPOINT if self.config.network == "finney" else TESTNET_SCORING_SERVER_ENDPOINT
+    headers = self.build_signed_headers(f"/score")
     try:
         scoring_response = requests.post(
-            SCORING_SERVER_ENDPOINT,
+            url,
             json=payload,
+            headers=headers,
             timeout=60,
         )
         scoring_response.raise_for_status()
@@ -95,7 +98,7 @@ def get_rewards(
             bt.logging.warning(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
             composite, metrics, duration_sec = 0.0, {"reason": "Invalid response"}, None
         else:
-            composite, metrics, duration_sec = reward(step, synapse, video_url)
+            composite, metrics, duration_sec = reward(self, step, synapse, video_url)
         composites.append(composite)
         detailed_metrics.append(metrics)
         if duration_sec == None or dendrite_process_time == None:

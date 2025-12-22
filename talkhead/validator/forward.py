@@ -23,7 +23,7 @@ import bittensor as bt
 from talkhead.protocol import TalkHeadSynapse
 from talkhead.validator.reward import get_rewards, apply_blended_rank, compute_latency_scores
 from talkhead.utils.uids import get_available_uids
-from talkhead.constants import TALKHEAD_SERVER_HOST, DENDRITE_TIMEOUT
+from talkhead.constants import TALKHEAD_SERVER_HOST, TESTNET_TALKHEAD_SERVER_HOST, DENDRITE_TIMEOUT
 import requests
 import base64
 
@@ -44,6 +44,7 @@ async def forward(self):
     # randomly shuffle the available miners list.
     np.random.shuffle(miner_uids)
     
+    total_uids = []
     total_composites = []
     total_detailed_metrics = []
     total_latency_ratios = []
@@ -51,11 +52,14 @@ async def forward(self):
         selected_miner_uids = miner_uids[i:min(i + self.config.neuron.sample_size, len(miner_uids))]
         bt.logging.info(f"Selected miner uids: {selected_miner_uids}")
         
-        host = TALKHEAD_SERVER_HOST if self.config.network == "finney" else "http://125.136.64.90:42021"
+        host = TALKHEAD_SERVER_HOST if self.config.network == "finney" else TESTNET_TALKHEAD_SERVER_HOST
         # Fetch the challenge from the talkhead server
         headers = self.build_signed_headers(f"/challenge")
-        response = requests.get(f"{host}/challenge", headers=headers, timeout=10)
-        response.raise_for_status()
+        try:
+            response = requests.get(f"{host}/challenge", headers=headers, timeout=10)
+        except Exception as e:
+            bt.logging.error(f"Failed to fetch challenge: {e}")
+            continue
         challenge = response.json()
 
         bt.logging.info(f"🏁 Fetched a challenge => text: \'{challenge['text']}\' | voice_profile: \'{challenge['voice_profile']}\'")
@@ -78,9 +82,22 @@ async def forward(self):
         # Log the results for monitoring purposes.
         bt.logging.info(f"🔵 Received responses: {responses}")
 
-        composites, detailed_metrics, latency_ratios = get_rewards(self, step=self.step, synapse=synapse, responses=responses)
-        bt.logging.info(f"🟣 Scored responses (composite, pre-latency): {composites}")
+        valid_uids = []
+        valid_responses = []
 
+        for uid, (video_url, dendrite_process_time) in zip(selected_miner_uids, responses):
+            if video_url is None or dendrite_process_time is None:
+                bt.logging.warning(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
+                continue
+            valid_uids.append(uid)
+            valid_responses.append((video_url, dendrite_process_time))
+
+        composites, detailed_metrics, latency_ratios = get_rewards(self, step=self.step, synapse=synapse, responses=valid_responses)
+
+        for uid, composite in zip(valid_uids, composites):
+            bt.logging.info(f"🟣 Composite score for uid {uid}: {composite}")
+
+        total_uids.extend(valid_uids)
         total_composites.extend(composites)
         total_detailed_metrics.extend(detailed_metrics)
         total_latency_ratios.extend(latency_ratios)
@@ -88,7 +105,7 @@ async def forward(self):
     # Apply latency scores globally across all collected miners before ranking.
     latency_scores = compute_latency_scores(total_latency_ratios)
     final_rewards = [composite * latency_score for composite, latency_score in zip(total_composites, latency_scores)]
-    bt.logging.debug(f"miner uids: {miner_uids}")
+    bt.logging.debug(f"miner uids: {total_uids}")
     bt.logging.debug(f"total composites scores: {total_composites}")
     bt.logging.debug(f"Latency scores: {latency_scores}")
     bt.logging.debug(f"Final rewards: {final_rewards}")
@@ -104,7 +121,7 @@ async def forward(self):
     applied_rewards, uids, detailed_metrics, is_100_percent_burn = apply_blended_rank(
         final_rewards,
         total_detailed_metrics,
-        miner_uids,
+        total_uids,
         top_miner_cap=self.config.neuron.top_miner_cap,
         decay_rate=self.config.neuron.decay_rate,
         blend_factor=self.config.neuron.blend_factor,
