@@ -18,7 +18,7 @@
 import numpy as np
 from typing import List, Tuple, Dict, Optional
 import bittensor as bt
-from talkhead.constants import SCORING_SERVER_ENDPOINT
+from talkhead.constants import SCORING_SERVER_ENDPOINT, TESTNET_SCORING_SERVER_ENDPOINT
 import requests
 from talkhead.protocol import TalkHeadSynapse
 
@@ -46,7 +46,7 @@ def reward(self, step: int, synapse: TalkHeadSynapse, video_url: str) -> Tuple[f
         "voice_profile": synapse.voice_profile,
     }
 
-    url = SCORING_SERVER_ENDPOINT if self.config.network == "finney" else "http://125.136.64.90:42021/score"
+    url = SCORING_SERVER_ENDPOINT if self.config.network == "finney" else TESTNET_SCORING_SERVER_ENDPOINT
     headers = self.build_signed_headers(f"/score")
     try:
         scoring_response = requests.post(

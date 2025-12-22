@@ -23,7 +23,7 @@ import bittensor as bt
 from talkhead.protocol import TalkHeadSynapse
 from talkhead.validator.reward import get_rewards, apply_blended_rank, compute_latency_scores
 from talkhead.utils.uids import get_available_uids
-from talkhead.constants import TALKHEAD_SERVER_HOST, DENDRITE_TIMEOUT
+from talkhead.constants import TALKHEAD_SERVER_HOST, TESTNET_TALKHEAD_SERVER_HOST, DENDRITE_TIMEOUT
 import requests
 import base64
 
@@ -52,7 +52,7 @@ async def forward(self):
         selected_miner_uids = miner_uids[i:min(i + self.config.neuron.sample_size, len(miner_uids))]
         bt.logging.info(f"Selected miner uids: {selected_miner_uids}")
         
-        host = TALKHEAD_SERVER_HOST if self.config.network == "finney" else "http://125.136.64.90:42021"
+        host = TALKHEAD_SERVER_HOST if self.config.network == "finney" else TESTNET_TALKHEAD_SERVER_HOST
         # Fetch the challenge from the talkhead server
         headers = self.build_signed_headers(f"/challenge")
         try:

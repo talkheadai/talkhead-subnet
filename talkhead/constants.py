@@ -3,8 +3,9 @@ import dotenv
 dotenv.load_dotenv()
 
 TALKHEAD_SERVER_HOST = "https://subnet.talkhead.ai"
-
+TESTNET_TALKHEAD_SERVER_HOST = os.getenv("TESTNET_TALKHEAD_SERVER_HOST", "http://localhost:8001")
 SCORING_SERVER_ENDPOINT=os.getenv("SCORING_SERVER_ENDPOINT", f"{TALKHEAD_SERVER_HOST}/score")
+TESTNET_SCORING_SERVER_ENDPOINT=os.getenv("TESTNET_SCORING_SERVER_ENDPOINT", "http://125.136.64.90:42021/score")
 BURN_UID = int(os.getenv("BURN_UID", 0))
 BURN_RATIO = float(os.getenv("BURN_RATIO", 1.0))
 
