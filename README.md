@@ -38,7 +38,7 @@ The repo ships both the blockchain-facing neurons (miner/validator) and the off-
 - Optional: Cloudflare R2 credentials if you want miners to upload clips (`CLOUDFLARE_R2_*`), Hugging Face CLI for Piper voices, CUDA-enabled onnxruntime for GPU scoring.
 
 > [!NOTE]
-> The entire project was tested on an RTX 4090 with no errors observed.
+> The entire project had been tested on an RTX 4090 with no errors observed.
 ---
 ## Validator Setup & Run
 
@@ -70,13 +70,8 @@ Key environment variables (override defaults as needed):
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `SCORING_SERVER_ENDPOINT` | Scoring API endpoint (`/score`) | `http://localhost:8100/generate` |
+| `SCORING_SERVER_ENDPOINT` | Scoring API endpoint (`/score`) | `http://localhost:8100/score` |
 | `DENDRITE_TIMEOUT` | Validator query timeout (seconds) | `120` |
-
-Validator reward knobs (CLI flags, defaults shown):
-- `--neuron.top_miner_cap 2` – how many miners are eligible for rank-based rewards.
-- `--neuron.decay_rate 0.05` – exponential decay applied to rank.
-- `--neuron.blend_factor 0.7` – blend between rank reward and raw score.
 
 Validators will pull challenges, query miners, call the scoring API, then set weights each epoch.
 
@@ -106,6 +101,7 @@ pm2 start neurons/miner.py -- --wallet.name [your_wallet_name] --wallet.hotkey [
 ```
 
 ---
+
 ## Configure Miner
 
 Key environment variables (override defaults as needed):
