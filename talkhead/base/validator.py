@@ -143,7 +143,7 @@ class BaseValidatorNeuron(BaseNeuron):
         ]
         await asyncio.gather(*coroutines)
 
-    def run(self):
+    def run(self, propagate_exceptions: bool = False):
         """
         Initiates and manages the main loop for the miner on the Bittensor network. The main loop handles graceful shutdown on keyboard interrupts and logs unforeseen errors.
 
@@ -171,7 +171,7 @@ class BaseValidatorNeuron(BaseNeuron):
         # This loop maintains the validator's operations until intentionally stopped.
         try:
             while True:
-                if self.config.network == "finney":
+                if self.subtensor.network == "finney":
                     check_and_update_code()
                 bt.logging.info(f"step({self.step}) block({self.block})")
 
@@ -202,6 +202,25 @@ class BaseValidatorNeuron(BaseNeuron):
             bt.logging.debug(
                 str(print_exception(type(err), err, err.__traceback__))
             )
+            if propagate_exceptions:
+                raise
+
+    def _run_thread_entry(self):
+        """
+        Entry point for the background thread. Restarts the run loop on failure.
+        """
+        restart_delay = 5  # seconds
+        while not self.should_exit:
+            try:
+                # Propagate so we can restart on failures.
+                self.run(propagate_exceptions=True)
+                # run exits normally only when should_exit is set; stop restarting.
+                break
+            except Exception as err:
+                bt.logging.error(
+                    f"Validator run crashed; restarting in {restart_delay}s: {err}"
+                )
+                time.sleep(restart_delay)
 
     def run_in_background_thread(self):
         """
@@ -211,7 +230,9 @@ class BaseValidatorNeuron(BaseNeuron):
         if not self.is_running:
             bt.logging.debug("Starting validator in background thread.")
             self.should_exit = False
-            self.thread = threading.Thread(target=self.run, daemon=True)
+            self.thread = threading.Thread(
+                target=self._run_thread_entry, daemon=True
+            )
             self.thread.start()
             self.is_running = True
             bt.logging.debug("Started")
@@ -235,7 +256,7 @@ class BaseValidatorNeuron(BaseNeuron):
         if not force and (now - self._last_burn_refresh_time) < self._burn_refresh_interval:
             return
 
-        host = TALKHEAD_SERVER_HOST if self.config.network == "finney" else "http://125.136.64.90:42021"
+        host = TALKHEAD_SERVER_HOST if self.subtensor.network == "finney" else "http://125.136.64.90:42021"
 
         try:
             headers = self.build_signed_headers(f"{host}/burn")
