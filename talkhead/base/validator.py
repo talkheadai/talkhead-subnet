@@ -24,7 +24,7 @@ import argparse
 import threading
 import requests
 import bittensor as bt
-from talkhead.constants import TALKHEAD_SERVER_HOST, BURN_RATIO, BURN_UID
+from talkhead.constants import TALKHEAD_SERVER_HOST, TESTNET_TALKHEAD_SERVER_HOST
 
 from typing import List, Union
 from traceback import print_exception
@@ -86,10 +86,13 @@ class BaseValidatorNeuron(BaseNeuron):
         self.lock = asyncio.Lock()
 
         # Burn configuration (defaults loaded from environment; refreshed via server)
-        self.burn_ratio = BURN_RATIO
-        self.burn_uid = BURN_UID
-        self._last_burn_refresh_time = 0.0
-        self._burn_refresh_interval = 300  # seconds
+        self.burn_ratio = 1.0
+        self.burn_uid = 0
+        self.top_miner_cap = 2
+        self.decay_rate = 0.05
+        self.blend_factor = 0.7
+        self._last_param_refresh_time = 0.0
+        self._param_refresh_interval = 300  # seconds
 
     def build_signed_headers(self, path: str) -> dict:
         """
@@ -248,55 +251,52 @@ class BaseValidatorNeuron(BaseNeuron):
             self.is_running = False
             bt.logging.debug("Stopped")
 
-    def refresh_burn_settings(self, force: bool = False):
+    def refresh_parameters(self, force: bool = False):
         """
-        Refresh burn ratio/UID from TALKHEAD_SERVER_HOST/burn with caching.
+        Refresh parameters from TALKHEAD_SERVER_HOST/params with caching.
         """
         now = time.time()
-        if not force and (now - self._last_burn_refresh_time) < self._burn_refresh_interval:
+        if not force and (now - self._last_param_refresh_time) < self._param_refresh_interval:
             return
 
-        host = TALKHEAD_SERVER_HOST if self.subtensor.network == "finney" else "http://125.136.64.90:42021"
+        host = TALKHEAD_SERVER_HOST if self.subtensor.network == "finney" else TESTNET_TALKHEAD_SERVER_HOST
 
         try:
-            headers = self.build_signed_headers(f"{host}/burn")
-            response = requests.get(f"{host}/burn", headers=headers, timeout=5)
+            headers = self.build_signed_headers(f"{host}/params")
+            response = requests.get(f"{host}/params", headers=headers, timeout=5)
             response.raise_for_status()
             payload = response.json() or {}
         except Exception as exc:
-            bt.logging.warning(f"Unable to refresh burn settings from server, using cached defaults. Error: {exc}")
-            self._last_burn_refresh_time = now
+            bt.logging.warning(f"Unable to refresh parameters from server, using cached defaults. Error: {exc}")
+            self._last_param_refresh_time = now
             return
 
         updated = False
-
-        new_ratio = payload.get("burn_ratio")
-        if new_ratio is not None:
+        def update_param(attr, cast, invalid_msg_fn=None):
+            nonlocal updated
+            raw = payload.get(attr)
+            if raw is None:
+                return
             try:
-                ratio_value = float(new_ratio)
-                if 0.0 <= ratio_value <= 1.0:
-                    if ratio_value != self.burn_ratio:
-                        updated = True
-                    self.burn_ratio = ratio_value
-                else:
-                    bt.logging.warning(f"Ignoring invalid burn_ratio outside [0,1]: {new_ratio}")
+                value = cast(raw)
             except (TypeError, ValueError):
-                bt.logging.warning(f"Ignoring non-numeric burn_ratio: {new_ratio}")
+                msg = invalid_msg_fn(raw) if invalid_msg_fn else f"Ignoring invalid {attr}: {raw}"
+                bt.logging.warning(msg)
+                return
+            if getattr(self, attr) != value:
+                updated = True
+            setattr(self, attr, value)
 
-        new_uid = payload.get("burn_uid")
-        if new_uid is not None:
-            try:
-                uid_value = int(new_uid)
-                if uid_value != self.burn_uid:
-                    updated = True
-                self.burn_uid = uid_value
-            except (TypeError, ValueError):
-                bt.logging.warning(f"Ignoring non-integer burn_uid: {new_uid}")
+        update_param("burn_ratio", float, invalid_msg_fn=lambda raw: f"Ignoring non-numeric burn_ratio: {raw}",)
+        update_param("burn_uid", int, invalid_msg_fn=lambda raw: f"Ignoring non-integer burn_uid: {raw}",)
+        update_param("top_miner_cap", int, invalid_msg_fn=lambda raw: f"Ignoring non-integer top_miner_cap: {raw}",)
+        update_param("decay_rate", float, invalid_msg_fn=lambda raw: f"Ignoring non-numeric decay_rate: {raw}",)
+        update_param("blend_factor", float, invalid_msg_fn=lambda raw: f"Ignoring non-numeric blend_factor: {raw}",)
 
         if updated:
-            bt.logging.info(f"Updated burn settings from server: ratio={self.burn_ratio}, uid={self.burn_uid}")
+            bt.logging.info(f"Updated parameters from server: ratio={self.burn_ratio}, uid={self.burn_uid}, top_miner_cap={self.top_miner_cap}, decay_rate={self.decay_rate}, blend_factor={self.blend_factor}")
 
-        self._last_burn_refresh_time = now
+        self._last_param_refresh_time = now
 
     def __enter__(self):
         self.run_in_background_thread()
@@ -349,7 +349,7 @@ class BaseValidatorNeuron(BaseNeuron):
         bt.logging.debug("raw_weight_uids", str(self.metagraph.uids.tolist()))
 
         # Ensure burn config is up to date before applying it.
-        self.refresh_burn_settings()
+        self.refresh_parameters()
         burn_ratio = self.burn_ratio
         burn_uid = self.burn_uid
 

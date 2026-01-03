@@ -122,9 +122,9 @@ async def forward(self):
         final_rewards,
         total_detailed_metrics,
         total_uids,
-        top_miner_cap=self.config.neuron.top_miner_cap,
-        decay_rate=self.config.neuron.decay_rate,
-        blend_factor=self.config.neuron.blend_factor,
+        top_miner_cap=self.top_miner_cap,
+        decay_rate=self.decay_rate,
+        blend_factor=self.blend_factor,
         burn_uid=self.burn_uid,
     )
     bt.logging.debug(f"Applied blended ranking uids: {uids}")
