@@ -2,6 +2,7 @@
 
 # **TalkHead Subnet** <!-- omit in toc -->
 [Discord](https://discord.com/channels/799672011265015819/1450185343205904565) • [Network](https://talkhead.ai/) • [Research](https://docs.google.com/document/d/1vOLAdBdgtxUn0n8izYjUQ4bS8DX6KhvUjvw9Zk3e28s/edit?usp=sharing)
+<video  src="https://github.com/user-attachments/assets/f8dd6afc-d2d2-4a0b-a4d9-49e51dd4aeb0" type="video/mp4"> </video>
 </div>
 
 ---
