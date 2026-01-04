@@ -63,7 +63,7 @@ class Miner(BaseMinerNeuron):
         """
         # TODO(developer): Replace with actual implementation logic.
         bt.logging.info(
-            f"🔵 Received synapse text: {synapse.text}  voice profile: {synapse.voice_profile}"
+            f"🔵 Received synapse text: {synapse.text}  voice profile: {synapse.voice_profile} from {synapse.dendrite.hotkey}"
         )
 
         start_time = time.time()

@@ -94,14 +94,14 @@ async def forward(self):
 
         composites, detailed_metrics, latency_ratios = get_rewards(self, step=self.step, synapse=synapse, responses=valid_responses)
 
-        for uid, composite in zip(valid_uids, composites):
+        for uid, composite, detailed_metric, latency_ratio in zip(valid_uids, composites, detailed_metrics, latency_ratios):
             bt.logging.info(f"🟣 Composite score for uid {uid}: {composite}")
+            if composite > 0.0:
+                total_uids.append(uid)
+                total_composites.append(composite)
+                total_detailed_metrics.append(detailed_metric)
+                total_latency_ratios.append(latency_ratio)
 
-        total_uids.extend(valid_uids)
-        total_composites.extend(composites)
-        total_detailed_metrics.extend(detailed_metrics)
-        total_latency_ratios.extend(latency_ratios)
-    
     # Apply latency scores globally across all collected miners before ranking.
     latency_scores = compute_latency_scores(total_latency_ratios)
     final_rewards = [composite * latency_score for composite, latency_score in zip(total_composites, latency_scores)]
