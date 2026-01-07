@@ -169,3 +169,5 @@ test_data/
 *.pth
 syncnet_v2.model
 piper-voices/
+
+wandb/

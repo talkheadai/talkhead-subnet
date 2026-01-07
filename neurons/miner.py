@@ -63,7 +63,7 @@ class Miner(BaseMinerNeuron):
         """
         # TODO(developer): Replace with actual implementation logic.
         bt.logging.info(
-            f"🔵 Received synapse text: {synapse.text}  voice profile: {synapse.voice_profile}"
+            f"🔵 Received synapse text: {synapse.text}  voice profile: {synapse.voice_profile} from {synapse.dendrite.hotkey}"
         )
 
         start_time = time.time()
@@ -214,5 +214,6 @@ class Miner(BaseMinerNeuron):
 if __name__ == "__main__":
     with Miner() as miner:
         while True:
-            bt.logging.info(f"Miner running... {time.time()}")
-            time.sleep(5)
+            # bt.logging.info(f"Miner running... {time.time()}")
+            # time.sleep(5)
+            pass

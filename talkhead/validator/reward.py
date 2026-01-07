@@ -47,8 +47,7 @@ def reward(self, step: int, synapse: TalkHeadSynapse, video_url: str) -> Tuple[f
     }
 
     url = SCORING_SERVER_ENDPOINT if self.subtensor.network == "finney" else TESTNET_SCORING_SERVER_ENDPOINT
-    if TALKHEAD_SERVER_HOST in SCORING_SERVER_ENDPOINT or url == TESTNET_SCORING_SERVER_ENDPOINT:
-        headers = self.build_signed_headers(f"/score")
+    headers = self.build_signed_headers(f"/score")
     try:
         scoring_response = requests.post(
             url,
@@ -96,7 +95,7 @@ def get_rewards(
 
     for video_url, dendrite_process_time in responses:
         if video_url is None or dendrite_process_time is None:
-            bt.logging.warning(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
+            bt.logging.debug(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
             composite, metrics, duration_sec = 0.0, {"reason": "Invalid response"}, None
         else:
             composite, metrics, duration_sec = reward(self, step, synapse, video_url)
