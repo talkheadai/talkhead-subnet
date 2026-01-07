@@ -26,6 +26,9 @@ from talkhead.utils.uids import get_available_uids
 from talkhead.constants import TALKHEAD_SERVER_HOST, TESTNET_TALKHEAD_SERVER_HOST, DENDRITE_TIMEOUT
 import requests
 import base64
+import wandb
+from typing import List, Dict
+from talkhead.utils.logging import maybe_reset_wandb
 
 async def forward(self):
     """
@@ -87,7 +90,7 @@ async def forward(self):
 
         for uid, (video_url, dendrite_process_time) in zip(selected_miner_uids, responses):
             if video_url is None or dendrite_process_time is None:
-                bt.logging.warning(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
+                bt.logging.debug(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
                 continue
             valid_uids.append(uid)
             valid_responses.append((video_url, dendrite_process_time))
@@ -103,17 +106,17 @@ async def forward(self):
                 total_latency_ratios.append(latency_ratio)
 
     # Apply latency scores globally across all collected miners before ranking.
-    latency_scores = compute_latency_scores(total_latency_ratios)
-    final_rewards = [composite * latency_score for composite, latency_score in zip(total_composites, latency_scores)]
+    total_latency_scores = compute_latency_scores(total_latency_ratios)
+    final_rewards = [composite * latency_score for composite, latency_score in zip(total_composites, total_latency_scores)]
     bt.logging.debug(f"miner uids: {total_uids}")
     bt.logging.debug(f"total composites scores: {total_composites}")
-    bt.logging.debug(f"Latency scores: {latency_scores}")
+    bt.logging.debug(f"Latency scores: {total_latency_scores}")
     bt.logging.debug(f"Final rewards: {final_rewards}")
 
     for idx, metrics in enumerate(total_detailed_metrics):
         metrics["composite_no_latency"] = float(total_composites[idx]) if idx < len(total_composites) else 0.0
         metrics["latency_ratio"] = total_latency_ratios[idx] if idx < len(total_latency_ratios) else None
-        metrics["latency_score"] = float(latency_scores[idx]) if idx < len(latency_scores) else 0.0
+        metrics["latency_score"] = float(total_latency_scores[idx]) if idx < len(total_latency_scores) else 0.0
 
     # Apply the blended ranking and quality threshold (always enabled).
     bt.logging.debug("Applying blended ranking and quality threshold to post-penalty rewards.")
@@ -130,5 +133,37 @@ async def forward(self):
     bt.logging.debug(f"Applied blended ranking uids: {uids}")
     bt.logging.debug(f"Applied blended ranking rewards: {applied_rewards}")
 
+    if not is_100_percent_burn
+        do_wandb_logging(self, total_uids, total_composites, total_latency_scores, applied_rewards, detailed_metrics)
+
     # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
     self.update_scores(applied_rewards, uids)
+
+    # prevent W&B logs from becoming massive
+    maybe_reset_wandb(self)
+
+
+def do_wandb_logging(
+        self, 
+        total_uids: List[int],
+        total_composites: List[float],
+        total_latency_scores: List[float],
+        applied_rewards: List[float],
+        detailed_metrics: List[Dict],
+    ):
+    if self.config.wandb.off:
+        return
+
+    uid_to_hotkey = {uid: self.metagraph.hotkeys[uid] for uid in total_uids}
+    for uid, composite, latency_score, applied_reward, detailed_metric in zip(total_uids, total_composites, total_latency_scores, applied_rewards, detailed_metrics):
+        wandb.log(
+            {
+                f"miner_{uid}_{uid_to_hotkey[uid]}_composite": composite,
+                f"miner_{uid}_{uid_to_hotkey[uid]}_latency_score": latency_score,
+                f"miner_{uid}_{uid_to_hotkey[uid]}_reward": applied_reward,
+                f"miner_{uid}_{uid_to_hotkey[uid]}_syncnet": detailed_metric.get("S_syncnet", 0.0),
+                f"miner_{uid}_{uid_to_hotkey[uid]}_arcface": detailed_metric.get("S_arcface", 0.0),
+                f"miner_{uid}_{uid_to_hotkey[uid]}_quality": detailed_metric.get("S_quality", 0.0),
+                f"miner_{uid}_{uid_to_hotkey[uid]}_reason": detailed_metric.get("reason", ""),
+            },
+        )

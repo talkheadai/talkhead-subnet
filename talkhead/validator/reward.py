@@ -95,7 +95,7 @@ def get_rewards(
 
     for video_url, dendrite_process_time in responses:
         if video_url is None or dendrite_process_time is None:
-            bt.logging.warning(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
+            bt.logging.debug(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
             composite, metrics, duration_sec = 0.0, {"reason": "Invalid response"}, None
         else:
             composite, metrics, duration_sec = reward(self, step, synapse, video_url)

@@ -12,3 +12,5 @@ BURN_RATIO = float(os.getenv("BURN_RATIO", 1.0))
 MINER_SERVER_ENDPOINT=os.getenv("MINER_SERVER_ENDPOINT", "http://localhost:9000/generate")
 
 DENDRITE_TIMEOUT = int(os.getenv("DENDRITE_TIMEOUT", 120))
+
+WANDB_MAX_LOGS = 95_000
