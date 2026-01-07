@@ -28,6 +28,8 @@ from talkhead.base.validator import BaseValidatorNeuron
 # Bittensor Validator Template:
 from talkhead.validator.forward import forward
 
+import wandb
+import talkhead
 
 class Validator(BaseValidatorNeuron):
     """
@@ -43,8 +45,9 @@ class Validator(BaseValidatorNeuron):
 
         bt.logging.info("load_state()")
         self.load_state()
-
+    
         # TODO(developer): Anything specific to your use case you can do here
+        self.init_wandb()
 
     async def forward(self):
         """
@@ -58,6 +61,47 @@ class Validator(BaseValidatorNeuron):
         # TODO(developer): Rewrite this function based on your protocol definition.
         return await forward(self)
 
+    def init_wandb(self):
+        if self.config.wandb.off:
+            return
+
+        run_name = f"validator-{self.uid}-{talkhead.__version__}"
+        self.config.run_name = run_name
+        self.config.uid = self.uid
+        self.config.hotkey = self.wallet.hotkey.ss58_address
+        self.config.version = talkhead.__version__
+        self.config.type = self.neuron_type
+
+        wandb_project = (
+            self.config.wandb.project_name
+            if self.subtensor.network == "finney"
+            else self.config.wandb.testnet_project_name
+        )
+
+        # Initialize the wandb run for the single project
+        bt.logging.info(
+            f"Initializing W&B run for '{self.config.wandb.entity}/{wandb_project}'"
+        )
+        try:
+            run_id = wandb.init(
+                name=run_name,
+                project=wandb_project,
+                entity=self.config.wandb.entity,
+                config=self.config,
+                dir=self.config.full_path,
+                mode="offline" if self.config.wandb.offline else None
+            ).id
+        except wandb.UsageError as e:
+            bt.logging.warning(e)
+            bt.logging.warning("Did you run wandb login?")
+            return
+
+        # Sign the run to ensure it's from the correct hotkey
+        signature = self.wallet.hotkey.sign(run_id.encode()).hex()
+        self.config.signature = signature
+        wandb.config.update(self.config, allow_val_change=True)
+
+        bt.logging.success(f"Started wandb run {run_name}")
 
 # The main function parses the configuration and runs the validator.
 if __name__ == "__main__":
