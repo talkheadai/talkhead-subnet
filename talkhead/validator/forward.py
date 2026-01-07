@@ -133,7 +133,7 @@ async def forward(self):
     bt.logging.debug(f"Applied blended ranking uids: {uids}")
     bt.logging.debug(f"Applied blended ranking rewards: {applied_rewards}")
 
-    if not is_100_percent_burn
+    if not is_100_percent_burn:
         do_wandb_logging(self, total_uids, total_composites, total_latency_scores, applied_rewards, detailed_metrics)
 
     # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
