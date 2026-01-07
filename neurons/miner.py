@@ -214,5 +214,6 @@ class Miner(BaseMinerNeuron):
 if __name__ == "__main__":
     with Miner() as miner:
         while True:
-            bt.logging.info(f"Miner running... {time.time()}")
-            time.sleep(5)
+            # bt.logging.info(f"Miner running... {time.time()}")
+            # time.sleep(5)
+            pass

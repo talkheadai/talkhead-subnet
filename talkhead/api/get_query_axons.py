@@ -118,7 +118,7 @@ async def get_query_api_axons(
     dendrite = bt.dendrite(wallet=wallet)
 
     if metagraph is None:
-        metagraph = bt.metagraph(netuid=21)
+        raise ValueError("metagraph parameter is required")
 
     if uids is not None:
         query_uids = [uids] if isinstance(uids, int) else uids

@@ -90,7 +90,7 @@ async def forward(self):
 
         for uid, (video_url, dendrite_process_time) in zip(selected_miner_uids, responses):
             if video_url is None or dendrite_process_time is None:
-                bt.logging.warning(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
+                bt.logging.debug(f"Invalid response: video_url: {video_url} | dendrite_process_time: {dendrite_process_time}")
                 continue
             valid_uids.append(uid)
             valid_responses.append((video_url, dendrite_process_time))
@@ -133,7 +133,8 @@ async def forward(self):
     bt.logging.debug(f"Applied blended ranking uids: {uids}")
     bt.logging.debug(f"Applied blended ranking rewards: {applied_rewards}")
 
-    do_wandb_logging(self, total_uids, total_composites, total_latency_scores, applied_rewards, detailed_metrics)
+    if not is_100_percent_burn
+        do_wandb_logging(self, total_uids, total_composites, total_latency_scores, applied_rewards, detailed_metrics)
 
     # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
     self.update_scores(applied_rewards, uids)
@@ -154,12 +155,15 @@ def do_wandb_logging(
         return
 
     uid_to_hotkey = {uid: self.metagraph.hotkeys[uid] for uid in total_uids}
-    wandb.log(
-        {
-            "total_uids": total_uids,
-            "total_composites": total_composites,
-            "total_latency_scores": total_latency_scores,
-            "applied_rewards": applied_rewards,
-            "detailed_metrics": detailed_metrics,
-        },
-    )
+    for uid, composite, latency_score, applied_reward, detailed_metric in zip(total_uids, total_composites, total_latency_scores, applied_rewards, detailed_metrics):
+        wandb.log(
+            {
+                f"miner_{uid}_{uid_to_hotkey[uid]}_composite": composite,
+                f"miner_{uid}_{uid_to_hotkey[uid]}_latency_score": latency_score,
+                f"miner_{uid}_{uid_to_hotkey[uid]}_reward": applied_reward,
+                f"miner_{uid}_{uid_to_hotkey[uid]}_syncnet": detailed_metric.get("S_syncnet", 0.0),
+                f"miner_{uid}_{uid_to_hotkey[uid]}_arcface": detailed_metric.get("S_arcface", 0.0),
+                f"miner_{uid}_{uid_to_hotkey[uid]}_quality": detailed_metric.get("S_quality", 0.0),
+                f"miner_{uid}_{uid_to_hotkey[uid]}_reason": detailed_metric.get("reason", ""),
+            },
+        )

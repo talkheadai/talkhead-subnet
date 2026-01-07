@@ -107,5 +107,6 @@ class Validator(BaseValidatorNeuron):
 if __name__ == "__main__":
     with Validator() as validator:
         while True:
-            bt.logging.info(f"Validator running... {time.time()}")
-            time.sleep(5)
+            # bt.logging.info(f"Validator running... {time.time()}")
+            # time.sleep(5)
+            pass
