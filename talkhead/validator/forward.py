@@ -59,7 +59,7 @@ async def forward(self):
         # Fetch the challenge from the talkhead server
         headers = self.build_signed_headers(f"/challenge")
         try:
-            response = requests.get(f"{host}/challenge", headers=headers, timeout=10)
+            response = requests.get(f"{host}/challenge", headers=headers, timeout=30)
         except Exception as e:
             bt.logging.error(f"Failed to fetch challenge: {e}")
             continue

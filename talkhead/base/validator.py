@@ -263,7 +263,7 @@ class BaseValidatorNeuron(BaseNeuron):
 
         try:
             headers = self.build_signed_headers(f"/params")
-            response = requests.get(f"{host}/params", headers=headers, timeout=5)
+            response = requests.get(f"{host}/params", headers=headers, timeout=30)
             response.raise_for_status()
             payload = response.json() or {}
         except Exception as exc:
