@@ -262,7 +262,7 @@ class BaseValidatorNeuron(BaseNeuron):
         host = TALKHEAD_SERVER_HOST if self.subtensor.network == "finney" else TESTNET_TALKHEAD_SERVER_HOST
 
         try:
-            headers = self.build_signed_headers(f"{host}/params")
+            headers = self.build_signed_headers(f"/params")
             response = requests.get(f"{host}/params", headers=headers, timeout=5)
             response.raise_for_status()
             payload = response.json() or {}

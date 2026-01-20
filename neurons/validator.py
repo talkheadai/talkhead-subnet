@@ -19,6 +19,8 @@
 
 import time
 
+from datetime import datetime, timezone
+
 # Bittensor
 import bittensor as bt
 
@@ -95,6 +97,8 @@ class Validator(BaseValidatorNeuron):
             bt.logging.warning(e)
             bt.logging.warning("Did you run wandb login?")
             return
+
+        self._wandb_start_date = datetime.now(timezone.utc).date()
 
         # Sign the run to ensure it's from the correct hotkey
         signature = self.wallet.hotkey.sign(run_id.encode()).hex()
