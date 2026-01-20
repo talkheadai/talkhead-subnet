@@ -46,7 +46,7 @@ def reward(self, step: int, synapse: TalkHeadSynapse, video_url: str) -> Tuple[f
         "voice_profile": synapse.voice_profile,
     }
 
-    url = SCORING_SERVER_ENDPOINT if self.subtensor.network == "finney" else TESTNET_SCORING_SERVER_ENDPOINT
+    url = SCORING_SERVER_ENDPOINT if self.subtensor.network != "test" else TESTNET_SCORING_SERVER_ENDPOINT
     headers = self.build_signed_headers(f"/score")
     try:
         scoring_response = requests.post(

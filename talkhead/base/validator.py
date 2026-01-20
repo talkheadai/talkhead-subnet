@@ -174,7 +174,7 @@ class BaseValidatorNeuron(BaseNeuron):
         # This loop maintains the validator's operations until intentionally stopped.
         try:
             while True:
-                if self.subtensor.network == "finney":
+                if self.subtensor.network != "test":
                     check_and_update_code()
                 bt.logging.info(f"step({self.step}) block({self.block})")
 
@@ -259,7 +259,7 @@ class BaseValidatorNeuron(BaseNeuron):
         if not force and (now - self._last_param_refresh_time) < self._param_refresh_interval:
             return
 
-        host = TALKHEAD_SERVER_HOST if self.subtensor.network == "finney" else TESTNET_TALKHEAD_SERVER_HOST
+        host = TALKHEAD_SERVER_HOST if self.subtensor.network != "test" else TESTNET_TALKHEAD_SERVER_HOST
 
         try:
             headers = self.build_signed_headers(f"/params")

@@ -76,7 +76,7 @@ class Validator(BaseValidatorNeuron):
 
         wandb_project = (
             self.config.wandb.project_name
-            if self.subtensor.network == "finney"
+            if self.subtensor.network != "test"
             else self.config.wandb.testnet_project_name
         )
 

@@ -55,7 +55,7 @@ async def forward(self):
         selected_miner_uids = miner_uids[i:min(i + self.config.neuron.sample_size, len(miner_uids))]
         bt.logging.info(f"Selected miner uids: {selected_miner_uids}")
         
-        host = TALKHEAD_SERVER_HOST if self.subtensor.network == "finney" else TESTNET_TALKHEAD_SERVER_HOST
+        host = TALKHEAD_SERVER_HOST if self.subtensor.network != "test" else TESTNET_TALKHEAD_SERVER_HOST
         # Fetch the challenge from the talkhead server
         headers = self.build_signed_headers(f"/challenge")
         try:
