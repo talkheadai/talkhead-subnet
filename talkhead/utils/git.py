@@ -3,6 +3,7 @@ import subprocess
 import sys
 import configparser
 import bittensor as bt
+import wandb
 
 
 def run_git_command(command, check=True, capture_output=False):
@@ -66,6 +67,13 @@ def update_to_latest():
 
     if is_up_to_date_with_main():
         bt.logging.info("Successfully updated to latest code from main")
+        # Cleanly finish any running WandB session before restarting the process.
+        try:
+            if wandb.run is not None:
+                bt.logging.info("Finishing active W&B run before restart.")
+                wandb.run.finish()
+        except Exception as e:
+            bt.logging.debug(f"Failed to finish W&B run before restart: {e}")
         python = sys.executable
         # restart the project.
         bt.logging.info("Restart the project.")
