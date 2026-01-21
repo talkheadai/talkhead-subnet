@@ -273,6 +273,12 @@ def add_validator_args(cls, parser):
         help="The blend factor between rank-based reward and original score (e.g., 0.7 means 70% rank, 30% original score).",
         default=0.7
     )
+    parser.add_argument(
+        '--neuron.latency_ratio_cap',
+        type=float,
+        help="The maximum latency ratio allowed for a miner to be considered for latency rewards.",
+        default=5.0
+    )
     
 def config(cls):
     """

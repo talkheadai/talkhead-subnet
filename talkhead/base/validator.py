@@ -88,11 +88,14 @@ class BaseValidatorNeuron(BaseNeuron):
         # Burn configuration (defaults loaded from environment; refreshed via server)
         self.burn_ratio = 1.0
         self.burn_uid = 0
+        self.latency_ratio_cap = 5.0
         self.top_miner_cap = 2
         self.decay_rate = 0.05
         self.blend_factor = 0.7
         self._last_param_refresh_time = 0.0
         self._param_refresh_interval = 300  # seconds
+        # ensure parameters are refreshed first
+        self.refresh_parameters(force=True)
 
     def build_signed_headers(self, path: str) -> dict:
         """
@@ -289,12 +292,13 @@ class BaseValidatorNeuron(BaseNeuron):
 
         update_param("burn_ratio", float, invalid_msg_fn=lambda raw: f"Ignoring non-numeric burn_ratio: {raw}",)
         update_param("burn_uid", int, invalid_msg_fn=lambda raw: f"Ignoring non-integer burn_uid: {raw}",)
+        update_param("latency_ratio_cap", float, invalid_msg_fn=lambda raw: f"Ignoring non-numeric latency_ratio_cap: {raw}",)
         update_param("top_miner_cap", int, invalid_msg_fn=lambda raw: f"Ignoring non-integer top_miner_cap: {raw}",)
         update_param("decay_rate", float, invalid_msg_fn=lambda raw: f"Ignoring non-numeric decay_rate: {raw}",)
         update_param("blend_factor", float, invalid_msg_fn=lambda raw: f"Ignoring non-numeric blend_factor: {raw}",)
 
         if updated:
-            bt.logging.info(f"Updated parameters from server: ratio={self.burn_ratio}, uid={self.burn_uid}, top_miner_cap={self.top_miner_cap}, decay_rate={self.decay_rate}, blend_factor={self.blend_factor}")
+            bt.logging.info(f"Updated parameters from server: ratio={self.burn_ratio}, uid={self.burn_uid}, latency_ratio_cap={self.latency_ratio_cap}, top_miner_cap={self.top_miner_cap}, decay_rate={self.decay_rate}, blend_factor={self.blend_factor}")
 
         self._last_param_refresh_time = now
 

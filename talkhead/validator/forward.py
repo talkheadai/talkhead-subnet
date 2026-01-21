@@ -106,7 +106,7 @@ async def forward(self):
                 total_latency_ratios.append(latency_ratio)
 
     # Apply latency scores globally across all collected miners before ranking.
-    total_latency_scores = compute_latency_scores(total_latency_ratios)
+    total_latency_scores = compute_latency_scores(total_latency_ratios, latency_ratio_cap=self.latency_ratio_cap)
     final_rewards = [composite * latency_score for composite, latency_score in zip(total_composites, total_latency_scores)]
     bt.logging.debug(f"miner uids: {total_uids}")
     bt.logging.debug(f"total composites scores: {total_composites}")

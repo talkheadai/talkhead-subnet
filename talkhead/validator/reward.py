@@ -108,7 +108,7 @@ def get_rewards(
 
     return np.array(composites), detailed_metrics, latency_ratios
 
-def compute_latency_scores(latency_ratios: List[Optional[float]], latency_ratio_cap: float = 20.0) -> np.ndarray:
+def compute_latency_scores(latency_ratios: List[Optional[float]], latency_ratio_cap: float = 5.0) -> np.ndarray:
     """
     Map latency ratios (dendrite_process_time / duration_sec) to [0, 1] where:
     - 1.0 corresponds to the minimum observed ratio in the batch
