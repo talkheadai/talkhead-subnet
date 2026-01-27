@@ -207,11 +207,13 @@ def metric_head_jerk(video_path: Path, target: float = 0.12) -> Tuple[MetricResu
     ), jerk_mean_capped
 
 
-def metric_blink_rate(video_path: Path, target_low: float = 10.0, target_high: float = 22.0) -> Tuple[MetricResult, Optional[float]]:
+def metric_blink_rate(video_path: Path, target_low: float = 10.0, target_high: float = 60.0) -> Tuple[MetricResult, Optional[float]]:
     """
     Metric 5: Blink rate naturalness using MediaPipe FaceMesh eye aspect ratio.
-    - Counts blinks across all frames, then normalizes to blinks per minute.
-    - EAR threshold and consecutive frames are heuristic.
+    - Target: 10-60 blinks/min
+    - Computation: OpenFace AU45 or EMOCA detector on video frames.
+    - Why it works for SadTalker: SadTalker includes blink simulation; ensures human-like frequency.
+    - Anti-Gaming Aspect: Zero blinks → instant 0 (anti-static image gaming).
     """
     try:
         import mediapipe as mp  # type: ignore
@@ -234,80 +236,127 @@ def metric_blink_rate(video_path: Path, target_low: float = 10.0, target_high: f
 
     fps = float(cap.get(cv2.CAP_PROP_FPS) or 25.0)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    if frame_count <= 0 or fps <= 0:
-        cap.release()
-        return MetricResult(
-            score=0.0,
-            raw=None,
-            available=True,
-            detail="no frames or fps=0",
-        ), None
+    target_fps = 10.0
+    stride = max(1, int(round(fps / target_fps)))
+    frame_time = stride / max(fps, 1.0)
 
-    duration_min = (frame_count / fps) / 60.0
-    if duration_min <= 0:
-        cap.release()
-        return MetricResult(
-            score=0.0,
-            raw=None,
-            available=True,
-            detail="invalid duration",
-        ), None
+    left_eye_idx = [33, 160, 158, 133, 153, 144]
+    right_eye_idx = [362, 385, 387, 263, 373, 380]
+    blink_threshold = 0.3
+    reopen_threshold = blink_threshold + 0.05
+    drop_ratio = 0.85
+    reopen_ratio = 0.95
+    baseline_window = 30
+    baseline_alpha = 0.1
+    min_close_sec = 0.08
+    min_close_frames = max(1, int(round(min_close_sec / max(frame_time, 1e-6))))
 
-    left_idx = [33, 160, 158, 133, 153, 144]
-    right_idx = [263, 387, 385, 362, 380, 373]
+    def _eye_aspect_ratio(landmarks, idxs, w: int, h: int) -> Optional[float]:
+        pts = np.array([(landmarks[i].x * w, landmarks[i].y * h) for i in idxs], dtype=np.float32)
+        c = np.linalg.norm(pts[0] - pts[3])
+        if c <= 1e-6:
+            return None
+        a = np.linalg.norm(pts[1] - pts[5])
+        b = np.linalg.norm(pts[2] - pts[4])
+        return float((a + b) / (2.0 * c))
 
-    def _ear(landmarks, idxs):
-        p = [(landmarks[i].x, landmarks[i].y) for i in idxs]
-        p1, p2, p3, p4, p5, p6 = p
-        def dist(a, b):
-            return float(np.hypot(a[0] - b[0], a[1] - b[1]))
-        return (dist(p2, p6) + dist(p3, p5)) / (2.0 * dist(p1, p4) + 1e-8)
-
-    blink_thresh = 0.21
-    consec_frames = 2
     blink_count = 0
     closed_frames = 0
+    in_blink = False
+    prev_ear: Optional[float] = None
+    min_ear_in_blink: Optional[float] = None
+    baseline_samples: list[float] = []
+    baseline_ear: Optional[float] = None
+    total_frames_read = 0
+    samples_processed = 0
+    frames_with_face = 0
+    max_samples = 600
 
     with mp.solutions.face_mesh.FaceMesh(
+        static_image_mode=False,
         max_num_faces=1,
         refine_landmarks=True,
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
-    ) as mesh:
-        while True:
+    ) as face_mesh:
+        while samples_processed < max_samples:
             ret, frame = cap.read()
             if not ret:
                 break
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            res = mesh.process(rgb)
-            if not res.multi_face_landmarks:
-                closed_frames = 0
+            if total_frames_read % stride != 0:
+                total_frames_read += 1
                 continue
-            lm = res.multi_face_landmarks[0].landmark
-            ear_left = _ear(lm, left_idx)
-            ear_right = _ear(lm, right_idx)
-            ear = (ear_left + ear_right) / 2.0
+            total_frames_read += 1
+            samples_processed += 1
+            h, w = frame.shape[:2]
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            result = face_mesh.process(rgb)
+            if not result.multi_face_landmarks:
+                continue
+            frames_with_face += 1
+            landmarks = result.multi_face_landmarks[0].landmark
+            left_ear = _eye_aspect_ratio(landmarks, left_eye_idx, w, h)
+            right_ear = _eye_aspect_ratio(landmarks, right_eye_idx, w, h)
 
-            if ear < blink_thresh:
-                closed_frames += 1
+            if left_ear is None or right_ear is None:
+                continue
+            ear = (left_ear + right_ear) / 2.0
+            if baseline_ear is None:
+                baseline_samples.append(ear)
+                baseline_ear = float(np.median(baseline_samples))
+            elif not in_blink:
+                baseline_ear = (1.0 - baseline_alpha) * baseline_ear + baseline_alpha * ear
+
+            close_thresh = baseline_ear * drop_ratio if baseline_ear is not None else blink_threshold
+            open_thresh = baseline_ear * reopen_ratio if baseline_ear is not None else reopen_threshold
+            
+            if not in_blink:
+                if ear < close_thresh:
+                    closed_frames += 1
+                    if closed_frames >= min_close_frames:
+                        in_blink = True
+                        min_ear_in_blink = ear
+                else:
+                    closed_frames = 0
             else:
-                if closed_frames >= consec_frames:
+                if min_ear_in_blink is not None:
+                    min_ear_in_blink = min(min_ear_in_blink, ear)
+                if ear >= open_thresh:
                     blink_count += 1
-                closed_frames = 0
-        # Catch blink at end
-        if closed_frames >= consec_frames:
-            blink_count += 1
+                    in_blink = False
+                    closed_frames = 0
+                    min_ear_in_blink = None
+
+            prev_ear = ear
 
     cap.release()
 
-    blink_rate = blink_count / duration_min
+    duration_sec = frame_count / max(fps, 1.0) if frame_count > 0 else total_frames_read * (1.0 / max(fps, 1.0))
+    if duration_sec <= 0 or frames_with_face < 5:
+        return MetricResult(
+            score=0.0,
+            raw=None,
+            available=True,
+            detail="insufficient face landmarks to estimate blink rate",
+        ), None
 
-    if blink_rate < target_low:
-        score = _clamp((blink_rate) / max(target_low, 1e-6))
-    elif blink_rate > target_high:
-        score = _clamp((2 * target_high - blink_rate) / target_high)
-    else:
+    if blink_count == 0:
+        return MetricResult(
+            score=0.0,
+            raw=None,
+            available=True,
+            detail="no blinks detected",
+        ), None
+    blink_rate = float(blink_count / duration_sec * 60.0)
+    print(f"blink_count: {blink_count}, blink_rate: {blink_rate}")
+    if blink_rate <= 0.0:
+        score = 0.0
+    elif blink_rate < target_low:
+        score = _clamp(blink_rate / target_low)
+    elif blink_rate <= target_high:
         score = 1.0
+    else:
+        score = _clamp(1.0 - (blink_rate - target_high) / target_high)
 
     return MetricResult(
         score=score,

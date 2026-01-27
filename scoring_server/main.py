@@ -51,7 +51,7 @@ class ScoreResponse(BaseModel):
     S_arcface: float
     S_quality: float
     # S_head_jerk: float
-    # S_blink: float
+    S_blink: float
     # S_flow: float
     # S_lpips: float
     duration_sec: Optional[float]
@@ -136,7 +136,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
                 S_arcface=0.0,
                 S_quality=0.0,
                 # S_head_jerk=0.0,
-                # S_blink=0.0,
+                S_blink=0.0,
                 # S_flow=0.0,
                 # S_lpips=0.0,
                 duration_sec=None,
@@ -156,7 +156,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
             S_arcface=0.0,
             S_quality=0.0,
             # S_head_jerk=0.0,
-            # S_blink=0.0,
+            S_blink=0.0,
             # S_flow=0.0,
             # S_lpips=0.0,
             duration_sec=None,
@@ -172,7 +172,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
         S_arcface=scores.S_arcface,
         S_quality=scores.S_quality,
         # S_head_jerk=scores.S_head_jerk,
-        # S_blink=scores.S_blink,
+        S_blink=scores.S_blink,
         # S_flow=scores.S_flow,
         # S_lpips=scores.S_lpips,
         duration_sec=scores.video_duration,
