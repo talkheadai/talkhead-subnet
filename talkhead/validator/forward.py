@@ -164,6 +164,7 @@ def do_wandb_logging(
                 f"miner_{uid}_{uid_to_hotkey[uid]}_syncnet": detailed_metric.get("S_syncnet", 0.0),
                 f"miner_{uid}_{uid_to_hotkey[uid]}_arcface": detailed_metric.get("S_arcface", 0.0),
                 f"miner_{uid}_{uid_to_hotkey[uid]}_quality": detailed_metric.get("S_quality", 0.0),
+                f"miner_{uid}_{uid_to_hotkey[uid]}_blink": detailed_metric.get("S_blink", 0.0),
                 f"miner_{uid}_{uid_to_hotkey[uid]}_reason": detailed_metric.get("reason", ""),
             },
         )

@@ -32,10 +32,10 @@ class MinerEvalScores:
     S_arcface: float
     S_quality: float
     # S_head_jerk: float
-    # S_blink: float
+    S_blink: float
     # S_flow: float
     # S_lpips: float
-    video_duration: float | None
+    video_duration: float
 
 
 def _normalize_weights(results: dict[str, MetricResult]) -> dict[str, float]:
@@ -51,21 +51,41 @@ def _normalize_weights(results: dict[str, MetricResult]) -> dict[str, float]:
 
 
 def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
+    video_duration = probe_duration(e.video_path)
+    if video_duration is None or video_duration <= 0.0:
+        return MinerEvalScores(
+            composite=0.0,
+            reason="Failed to probe video duration",
+            S_syncnet=0.0,
+            S_arcface=0.0,
+            S_quality=0.0,
+            S_blink=0.0,
+            video_duration=0.0,
+        )
+    blink_res, _ = metric_blink_rate(e.video_path)
+    if blink_res.score == 0.0 and blink_res.detail == "no blinks detected":
+        return MinerEvalScores(
+            composite=0.0,
+            reason="No blinks detected",
+            S_syncnet=0.0,
+            S_arcface=0.0,
+            S_quality=0.0,
+            S_blink=0.0,
+            video_duration=video_duration,
+        )
     sync_res, _ = metric_syncnet(e.video_path)
     arc_res, _ = metric_arcface_identity(e.image_path, e.video_path)
     quality_res, _ = metric_quality(e.video_path)
     # head_res, _ = metric_head_jerk(e.video_path)
-    # blink_res, _ = metric_blink_rate(e.video_path)
     # flow_res, _ = metric_raft_flow(e.video_path)
     # lpips_res, _ = metric_lpips(e.video_path)
-    video_duration = probe_duration(e.video_path)
 
     results = {
         "syncnet": sync_res,
         "arcface": arc_res,
         "quality": quality_res,
         # "head_jerk": head_res,
-        # "blink": blink_res,
+        "blink": blink_res,
         # "flow": flow_res,
         # "lpips": lpips_res,
     }
@@ -89,7 +109,7 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
         S_arcface=arc_res.score,
         S_quality=quality_res.score,
         # S_head_jerk=head_res.score,
-        # S_blink=blink_res.score,
+        S_blink=blink_res.score,
         # S_flow=flow_res.score,
         # S_lpips=lpips_res.score,
         video_duration=video_duration,
