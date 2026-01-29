@@ -28,14 +28,14 @@ class MinerEvalScores:
     composite: float
     reason: str
 
-    S_syncnet: Optional[float]
-    S_arcface: Optional[float]
-    S_quality: Optional[float]
-    # S_head_jerk: Optional[float]
-    S_blink: Optional[float]
-    # S_flow: Optional[float]
-    # S_lpips: Optional[float]
-    video_duration: float | None
+    S_syncnet: float
+    S_arcface: float
+    S_quality: float
+    # S_head_jerk: float
+    S_blink: float
+    # S_flow: float
+    # S_lpips: float
+    video_duration: float
 
 
 def _normalize_weights(results: dict[str, MetricResult]) -> dict[str, float]:
@@ -52,15 +52,25 @@ def _normalize_weights(results: dict[str, MetricResult]) -> dict[str, float]:
 
 def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     video_duration = probe_duration(e.video_path)
+    if video_duration is None or video_duration <= 0.0:
+        return MinerEvalScores(
+            composite=0.0,
+            reason="Failed to probe video duration",
+            S_syncnet=0.0,
+            S_arcface=0.0,
+            S_quality=0.0,
+            S_blink=0.0,
+            video_duration=0.0,
+        )
     blink_res, _ = metric_blink_rate(e.video_path)
     if blink_res.score == 0.0 and blink_res.detail == "no blinks detected":
         return MinerEvalScores(
             composite=0.0,
             reason="No blinks detected",
-            S_syncnet=None,
-            S_arcface=None,
-            S_quality=None,
-            S_blink=None,
+            S_syncnet=0.0,
+            S_arcface=0.0,
+            S_quality=0.0,
+            S_blink=0.0,
             video_duration=video_duration,
         )
     sync_res, _ = metric_syncnet(e.video_path)

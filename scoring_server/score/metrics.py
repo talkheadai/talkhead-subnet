@@ -236,7 +236,7 @@ def metric_blink_rate(video_path: Path, target_low: float = 10.0, target_high: f
 
     fps = float(cap.get(cv2.CAP_PROP_FPS) or 25.0)
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    target_fps = 10.0
+    target_fps = 25.0
     stride = max(1, int(round(fps / target_fps)))
     frame_time = stride / max(fps, 1.0)
 
@@ -244,11 +244,11 @@ def metric_blink_rate(video_path: Path, target_low: float = 10.0, target_high: f
     right_eye_idx = [362, 385, 387, 263, 373, 380]
     blink_threshold = 0.3
     reopen_threshold = blink_threshold + 0.05
-    drop_ratio = 0.85
+    drop_ratio = 0.92
     reopen_ratio = 0.95
     baseline_window = 30
     baseline_alpha = 0.1
-    min_close_sec = 0.08
+    min_close_sec = 0.04
     min_close_frames = max(1, int(round(min_close_sec / max(frame_time, 1e-6))))
 
     def _eye_aspect_ratio(landmarks, idxs, w: int, h: int) -> Optional[float]:
@@ -348,7 +348,6 @@ def metric_blink_rate(video_path: Path, target_low: float = 10.0, target_high: f
             detail="no blinks detected",
         ), None
     blink_rate = float(blink_count / duration_sec * 60.0)
-    print(f"blink_count: {blink_count}, blink_rate: {blink_rate}")
     if blink_rate <= 0.0:
         score = 0.0
     elif blink_rate < target_low:
