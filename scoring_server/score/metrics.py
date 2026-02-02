@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
+import contextlib
+import os
 
 import numpy as np
 import cv2
@@ -15,6 +17,35 @@ from utils.media import _sample_frames
 
 def _clamp(v: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, v))
+
+
+def _silence_mediapipe_logs() -> None:
+    # Reduce noisy absl/glog logs before importing mediapipe.
+    os.environ.setdefault("GLOG_minloglevel", "2")
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+    try:
+        from absl import logging as absl_logging  # type: ignore
+        absl_logging.set_verbosity(absl_logging.ERROR)
+        absl_logging.set_stderrthreshold("error")
+    except Exception:
+        pass
+
+
+@contextlib.contextmanager
+def _suppress_output():
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    stdout_fd = os.dup(1)
+    stderr_fd = os.dup(2)
+    try:
+        os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
+        yield
+    finally:
+        os.dup2(stdout_fd, 1)
+        os.dup2(stderr_fd, 2)
+        os.close(stdout_fd)
+        os.close(stderr_fd)
+        os.close(devnull)
 
 
 @dataclass
@@ -138,6 +169,7 @@ def metric_head_jerk(video_path: Path, target: float = 0.12) -> Tuple[MetricResu
     If mediapipe is available we approximate jerk using nose trajectory.
     """
     try:
+        _silence_mediapipe_logs()
         import mediapipe as mp  # type: ignore
     except Exception as exc:  # noqa: BLE001
         return MetricResult(
@@ -160,17 +192,18 @@ def metric_head_jerk(video_path: Path, target: float = 0.12) -> Tuple[MetricResu
     dt = 1.0 / max(fps, 1.0)
     positions = []
 
-    with mp.solutions.pose.Pose(static_image_mode=False, model_complexity=1) as pose:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = pose.process(rgb)
-            if not result.pose_landmarks:
-                continue
-            nose = result.pose_landmarks.landmark[0]  # nose landmark
-            positions.append((nose.x, nose.y, nose.z))
+    with _suppress_output():
+        with mp.solutions.pose.Pose(static_image_mode=False, model_complexity=1) as pose:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                result = pose.process(rgb)
+                if not result.pose_landmarks:
+                    continue
+                nose = result.pose_landmarks.landmark[0]  # nose landmark
+                positions.append((nose.x, nose.y, nose.z))
     cap.release()
 
     if len(positions) < 5:
@@ -216,6 +249,7 @@ def metric_blink_rate(video_path: Path, target_low: float = 10.0, target_high: f
     - Anti-Gaming Aspect: Zero blinks → instant 0 (anti-static image gaming).
     """
     try:
+        _silence_mediapipe_logs()
         import mediapipe as mp  # type: ignore
     except Exception as exc:  # noqa: BLE001
         return MetricResult(
@@ -272,62 +306,63 @@ def metric_blink_rate(video_path: Path, target_low: float = 10.0, target_high: f
     frames_with_face = 0
     max_samples = 600
 
-    with mp.solutions.face_mesh.FaceMesh(
-        static_image_mode=False,
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5,
-    ) as face_mesh:
-        while samples_processed < max_samples:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            if total_frames_read % stride != 0:
+    with _suppress_output():
+        with mp.solutions.face_mesh.FaceMesh(
+            static_image_mode=False,
+            max_num_faces=1,
+            refine_landmarks=True,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5,
+        ) as face_mesh:
+            while samples_processed < max_samples:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                if total_frames_read % stride != 0:
+                    total_frames_read += 1
+                    continue
                 total_frames_read += 1
-                continue
-            total_frames_read += 1
-            samples_processed += 1
-            h, w = frame.shape[:2]
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            result = face_mesh.process(rgb)
-            if not result.multi_face_landmarks:
-                continue
-            frames_with_face += 1
-            landmarks = result.multi_face_landmarks[0].landmark
-            left_ear = _eye_aspect_ratio(landmarks, left_eye_idx, w, h)
-            right_ear = _eye_aspect_ratio(landmarks, right_eye_idx, w, h)
+                samples_processed += 1
+                h, w = frame.shape[:2]
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                result = face_mesh.process(rgb)
+                if not result.multi_face_landmarks:
+                    continue
+                frames_with_face += 1
+                landmarks = result.multi_face_landmarks[0].landmark
+                left_ear = _eye_aspect_ratio(landmarks, left_eye_idx, w, h)
+                right_ear = _eye_aspect_ratio(landmarks, right_eye_idx, w, h)
 
-            if left_ear is None or right_ear is None:
-                continue
-            ear = (left_ear + right_ear) / 2.0
-            if baseline_ear is None:
-                baseline_samples.append(ear)
-                baseline_ear = float(np.median(baseline_samples))
-            elif not in_blink:
-                baseline_ear = (1.0 - baseline_alpha) * baseline_ear + baseline_alpha * ear
+                if left_ear is None or right_ear is None:
+                    continue
+                ear = (left_ear + right_ear) / 2.0
+                if baseline_ear is None:
+                    baseline_samples.append(ear)
+                    baseline_ear = float(np.median(baseline_samples))
+                elif not in_blink:
+                    baseline_ear = (1.0 - baseline_alpha) * baseline_ear + baseline_alpha * ear
 
-            close_thresh = baseline_ear * drop_ratio if baseline_ear is not None else blink_threshold
-            open_thresh = baseline_ear * reopen_ratio if baseline_ear is not None else reopen_threshold
-            
-            if not in_blink:
-                if ear < close_thresh:
-                    closed_frames += 1
-                    if closed_frames >= min_close_frames:
-                        in_blink = True
-                        min_ear_in_blink = ear
+                close_thresh = baseline_ear * drop_ratio if baseline_ear is not None else blink_threshold
+                open_thresh = baseline_ear * reopen_ratio if baseline_ear is not None else reopen_threshold
+                
+                if not in_blink:
+                    if ear < close_thresh:
+                        closed_frames += 1
+                        if closed_frames >= min_close_frames:
+                            in_blink = True
+                            min_ear_in_blink = ear
+                    else:
+                        closed_frames = 0
                 else:
-                    closed_frames = 0
-            else:
-                if min_ear_in_blink is not None:
-                    min_ear_in_blink = min(min_ear_in_blink, ear)
-                if ear >= open_thresh:
-                    blink_count += 1
-                    in_blink = False
-                    closed_frames = 0
-                    min_ear_in_blink = None
+                    if min_ear_in_blink is not None:
+                        min_ear_in_blink = min(min_ear_in_blink, ear)
+                    if ear >= open_thresh:
+                        blink_count += 1
+                        in_blink = False
+                        closed_frames = 0
+                        min_ear_in_blink = None
 
-            prev_ear = ear
+                prev_ear = ear
 
     cap.release()
 

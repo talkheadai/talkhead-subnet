@@ -1,16 +1,55 @@
 from functools import lru_cache
+import contextlib
+import os
+import sys
 from pathlib import Path
 from typing import Tuple
 
+
+@contextlib.contextmanager
+def _suppress_output():
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    stdout_fd = os.dup(1)
+    stderr_fd = os.dup(2)
+    stdout = sys.stdout
+    stderr = sys.stderr
+    devnull_file = open(os.devnull, "w")
+    try:
+        os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
+        sys.stdout = devnull_file
+        sys.stderr = devnull_file
+        yield
+    finally:
+        os.dup2(stdout_fd, 1)
+        os.dup2(stderr_fd, 2)
+        sys.stdout = stdout
+        sys.stderr = stderr
+        devnull_file.close()
+        os.close(stdout_fd)
+        os.close(stderr_fd)
+        os.close(devnull)
+
+
+# Silence noisy native/runtime logs before importing SyncNet/ORT.
+os.environ.setdefault("ORT_LOG_SEVERITY_LEVEL", "4")
+os.environ.setdefault("ORT_LOG_LEVEL", "4")
+
+with _suppress_output():
+    try:
+        import onnxruntime as ort  # type: ignore
+        ort.set_default_logger_severity(4)
+    except Exception:
+        pass
+
 import torch
-from syncnet_python import SyncNetPipeline
 
 
 WEIGHTS_DIR = Path(__file__).resolve().parents[0] / "syncnet"
 
 
 @lru_cache(maxsize=1)
-def _get_syncnet_pipeline() -> SyncNetPipeline:
+def _get_syncnet_pipeline():
     """
     Lazy-load SyncNet once and reuse.
     """
@@ -24,11 +63,13 @@ def _get_syncnet_pipeline() -> SyncNetPipeline:
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    pipeline = SyncNetPipeline(
-        s3fd_weights=str(s3fd_weights),
-        syncnet_weights=str(syncnet_weights),
-        device=device,
-    )
+    with _suppress_output():
+        from syncnet_python import SyncNetPipeline
+        pipeline = SyncNetPipeline(
+            s3fd_weights=str(s3fd_weights),
+            syncnet_weights=str(syncnet_weights),
+            device=device,
+        )
     return pipeline
 
 
@@ -46,18 +87,19 @@ def run_syncnet(
     """
     pipeline = _get_syncnet_pipeline()
 
-    (
-        offset_list,
-        confidence_list,
-        min_dist_list,
-        best_confidence,
-        best_min_dist,
-        detections_json,
-        success,
-    ) = pipeline.inference(
-        video_path=str(video_path),
-        audio_path=str(reference_audio_path) if reference_audio_path else None,
-    )
+    with _suppress_output():
+        (
+            offset_list,
+            confidence_list,
+            min_dist_list,
+            best_confidence,
+            best_min_dist,
+            detections_json,
+            success,
+        ) = pipeline.inference(
+            video_path=str(video_path),
+            audio_path=str(reference_audio_path) if reference_audio_path else None,
+        )
 
     return bool(success), float(best_confidence), float(best_min_dist)
 

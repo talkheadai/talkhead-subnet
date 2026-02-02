@@ -6,7 +6,6 @@ import cv2
 import numpy as np
 import insightface
 import torch
-from loguru import logger
 
 
 @lru_cache(maxsize=1)
@@ -26,8 +25,6 @@ def _load_image(path: Path) -> np.ndarray:
     img = cv2.imread(str(path))
     if img is None:
         raise RuntimeError(f"Failed to read image at {path}")
-    logger.info(f"img.ndim: {img.ndim}")
-    logger.info(f"img.shape: {img.shape}")
     # InsightFace expects 3-channel BGR input; some PNGs are BGRA or grayscale.
     if img.ndim == 2:
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)

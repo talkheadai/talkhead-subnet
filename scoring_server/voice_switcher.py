@@ -4,10 +4,8 @@ import os
 import wave
 import tempfile
 from pathlib import Path
-from loguru import logger
 # piper voices directory is in parent directory of this file
 PIPER_VOICE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "piper-voices")
-print(PIPER_VOICE_DIR)
 
 
 
@@ -21,10 +19,7 @@ class VoiceSwitcher:
             for file in files:
                 if os.path.join(root, file).endswith(".onnx") and file.startswith("en"):
                     voice_name = os.path.splitext(file)[0]
-                    print(voice_name)
                     self.voices[voice_name] = PiperVoice.load(os.path.join(root, file))
-        
-        logger.info(f"Loaded {len(self.voices)} voices")
 
     def generate_audio(self, text: str, voice_profile: str = "en_US-lessac-medium"):
         if voice_profile not in self.voices:
@@ -40,5 +35,4 @@ if __name__ == "__main__":
     switcher = VoiceSwitcher(piper_voice_dir="../piper-voices")
     
     # Generate with different stock voices
-    audio_path = switcher.generate_audio("Hello, welcome to TalkHead!", "en_GB-alan-low")
-    print(audio_path)
+    switcher.generate_audio("Hello, welcome to TalkHead!", "en_GB-alan-low")

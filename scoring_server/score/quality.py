@@ -161,7 +161,6 @@ def score_quality(video_path: Path) -> tuple[float, str]:
         S_res = 0.0
     else:
         min_dim = min(width, height)
-        print(f"min_dim: {min_dim}")
         if min_dim <= 480:
             # penalize low resolution
             return 0.0, "Video resolution is too low"
