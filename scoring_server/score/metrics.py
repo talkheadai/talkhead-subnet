@@ -587,7 +587,14 @@ def metric_quality(video_path: Path) -> Tuple[MetricResult, Optional[float]]:
     Wrapper around legacy quality score (sharpness/brightness/motion/audio).
     """
     try:
-        val = float(score_quality(video_path))
+        val, reason = score_quality(video_path)
+        if val == 0.0:
+            return MetricResult(
+                score=0.0,
+                raw=None,
+                available=False,
+                detail=reason,
+            ), None
     except Exception as exc:  # noqa: BLE001
         return MetricResult(
             score=0.0,
@@ -600,5 +607,5 @@ def metric_quality(video_path: Path) -> Tuple[MetricResult, Optional[float]]:
         score=_clamp(val),
         raw=val,
         available=True,
-        detail="legacy quality score",
+        detail=reason,
     ), val

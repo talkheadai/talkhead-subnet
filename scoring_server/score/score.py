@@ -63,10 +63,21 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
             video_duration=0.0,
         )
     blink_res, _ = metric_blink_rate(e.video_path)
-    if blink_res.score == 0.0 and blink_res.detail == "no blinks detected":
+    if blink_res.score == 0.0:
         return MinerEvalScores(
             composite=0.0,
-            reason="No blinks detected",
+            reason=blink_res.detail,
+            S_syncnet=0.0,
+            S_arcface=0.0,
+            S_quality=0.0,
+            S_blink=0.0,
+            video_duration=video_duration,
+        )
+    quality_res, _ = metric_quality(e.video_path)
+    if quality_res.score == 0.0:
+        return MinerEvalScores(
+            composite=0.0,
+            reason=quality_res.detail,
             S_syncnet=0.0,
             S_arcface=0.0,
             S_quality=0.0,
@@ -75,7 +86,6 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
         )
     sync_res, _ = metric_syncnet(e.video_path)
     arc_res, _ = metric_arcface_identity(e.image_path, e.video_path)
-    quality_res, _ = metric_quality(e.video_path)
     # head_res, _ = metric_head_jerk(e.video_path)
     # flow_res, _ = metric_raft_flow(e.video_path)
     # lpips_res, _ = metric_lpips(e.video_path)
