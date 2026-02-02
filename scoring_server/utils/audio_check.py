@@ -12,7 +12,6 @@ from piper.voice import PiperVoice
 import librosa
 
 from utils.media import extract_audio
-from loguru import logger
 from voice_switcher import VoiceSwitcher
 switcher = VoiceSwitcher()
 
@@ -80,20 +79,16 @@ def verify_video_audio_matches_text(
     Returns (ok, reason).
     """
     video_audio_path = extract_audio(video_path)
-    logger.info(f"Video audio path: {video_audio_path}")
     if video_audio_path is None:
         return False, "failed to extract audio from video"
 
     try:
         ref_audio_path = switcher.generate_audio(text, voice_profile)
-        logger.info(f"Ref audio path: {ref_audio_path}")
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"Failed to synthesize reference audio: {exc}")
         return False, f"failed to synthesize reference audio: {exc}"
 
     try:
         sim = cosine_sim_mel(video_audio_path, ref_audio_path)
-        logger.info(f"Cosine similarity: {sim}")
     finally:
         try:
             # ref_audio_path.unlink(missing_ok=True)

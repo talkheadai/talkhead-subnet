@@ -25,8 +25,6 @@ def download_video_from_url(video_url: str) -> Path:
             if chunk:
                 tmp.write(chunk)
         tmp_path = Path(tmp.name)
-    print(f"Downloaded video to {tmp_path}")
-
     return tmp_path
 
 
@@ -38,6 +36,7 @@ def probe_duration(video_path: Path) -> Optional[float]:
     cmd = [
         "ffprobe",
         "-v", "error",
+        "-hide_banner",
         "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1",
         str(video_path),
@@ -61,6 +60,9 @@ def extract_audio(video_path: Path) -> Optional[Path]:
     cmd = [
         "ffmpeg",
         "-y",
+        "-hide_banner",
+        "-loglevel", "error",
+        "-nostats",
         "-i", str(video_path),
         "-vn",
         "-acodec", "pcm_s16le",
