@@ -37,6 +37,29 @@ def _compute_motion_and_freeze(frames: list[np.ndarray]) -> tuple[float, float]:
     freeze_ratio = frozen_pairs / len(diffs)
     return avg_motion, freeze_ratio
 
+
+def _probe_video_meta(video_path: Path) -> tuple[float | None, int | None, int | None, float | None]:
+    """
+    Returns (fps, width, height, duration_sec) with best-effort fallbacks.
+    """
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return None, None, None, probe_duration(video_path)
+
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    cap.release()
+
+    duration = None
+    if fps > 0.0 and frame_count > 0:
+        duration = frame_count / fps
+    else:
+        duration = probe_duration(video_path)
+
+    return fps if fps > 0.0 else None, width if width > 0 else None, height if height > 0 else None, duration
+
 def score_audio_quality(video_path: Path) -> float:
     """
     Audio quality score in [0,1], combining:
@@ -122,7 +145,7 @@ def score_audio_quality(video_path: Path) -> float:
     return float(np.clip(S_audio, 0.0, 1.0))
 
 
-def score_quality(video_path: Path) -> float:
+def score_quality(video_path: Path) -> tuple[float, str]:
     """
     Basic perceptual quality score in [0,1], combining:
       - visual sharpness (Laplacian variance)
@@ -130,10 +153,33 @@ def score_quality(video_path: Path) -> float:
       - motion amount (some movement is good)
       - freeze ratio (long static segments are bad)
       - audio quality (loudness, silence, clipping)
+      - resolution, fps, and duration sanity checks (anti-cheat)
     """
+
+    fps, width, height, duration = _probe_video_meta(video_path)
+    if width is None or height is None:
+        S_res = 0.0
+    else:
+        min_dim = min(width, height)
+        print(f"min_dim: {min_dim}")
+        if min_dim <= 480:
+            # penalize low resolution
+            return 0.0, "Video resolution is too low"
+        else:
+            S_res = 1.0
+        
+    if fps is None:
+        S_fps = 0.0
+    elif fps <= 12.0:
+        return 0.0, "Video FPS is too low"
+    elif fps >= 24.0:
+        S_fps = 1.0
+    else:
+        S_fps = (fps - 12.0) / (24.0 - 12.0)
+
     frames = _sample_frames(video_path, max_frames=32)
     if not frames:
-        return 0.0
+        return 0.0, "No frames found"
 
     sharp_vals = []
     bright_vals = []
@@ -175,11 +221,13 @@ def score_quality(video_path: Path) -> float:
     S_audio = score_audio_quality(video_path)
 
     S_quality = (
-        0.3 * S_sharp
-        + 0.15 * S_bright
-        + 0.15 * S_motion
-        + 0.15 * S_freeze
-        + 0.25 * S_audio
+        0.25 * S_sharp
+        + 0.12 * S_bright
+        + 0.13 * S_motion
+        + 0.13 * S_freeze
+        + 0.22 * S_audio
+        + 0.1 * S_res
+        + 0.05 * S_fps
     )
 
-    return float(np.clip(S_quality, 0.0, 1.0))
+    return float(np.clip(S_quality, 0.0, 1.0)), "legacy quality score"

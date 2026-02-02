@@ -15,9 +15,9 @@ from score.metrics import (
 
 cases = [
     # 0, # full test
-    1, # syncnet only
+    # 1, # syncnet only
     # 2, # arcface only
-    # 3, # quality only
+    3, # quality only
     # 4, # head jerk only
     # 5, # blink rate only
     # 6, # flow only 
@@ -51,7 +51,8 @@ if __name__ == "__main__":
             print(f"S_arcface: {S_arcface} took {time.time() - start_time} seconds")
         if case == 3:  # quality
             start_time = time.time()
-            S_quality, _ = metric_quality(Path("../test_data/talker.mp4"))
+            S_quality, _ = metric_quality(Path("../test_data/175212_you-could-have-died-after-peace-had-been_876aa703.mp4"))
+            # S_quality, _ = metric_quality(Path("../test_data/063826_what-do-you-want-done-with-them-tomorrow_8b8b6558.mp4"))
             print(f"S_quality: {S_quality} took {time.time() - start_time} seconds")
         if case == 4:  # head jerk
             start_time = time.time()
