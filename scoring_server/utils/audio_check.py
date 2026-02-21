@@ -80,15 +80,17 @@ def verify_video_audio_matches_text(
     """
     video_audio_path = extract_audio(video_path)
     if video_audio_path is None:
-        return False, "failed to extract audio from video"
+        return False, "failed to extract audio from video", None
 
     try:
         ref_audio_path = switcher.generate_audio(text, voice_profile)
     except Exception as exc:  # noqa: BLE001
-        return False, f"failed to synthesize reference audio: {exc}"
+        return False, f"failed to synthesize reference audio: {exc}", None
 
     try:
         sim = cosine_sim_mel(video_audio_path, ref_audio_path)
+        # get audio duration from reference audio
+        audio_duration = sf.info(ref_audio_path).duration
     finally:
         try:
             # ref_audio_path.unlink(missing_ok=True)
@@ -97,5 +99,5 @@ def verify_video_audio_matches_text(
             pass
 
     if sim >= similarity_threshold:
-        return True, ""
-    return False, f"incorrect audio (similarity={sim:.3f} < {similarity_threshold})"
+        return True, "", audio_duration
+    return False, f"incorrect audio (similarity={sim:.3f} < {similarity_threshold})", audio_duration

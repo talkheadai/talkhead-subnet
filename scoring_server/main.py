@@ -121,7 +121,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
 
     # 3. Run evaluation
     if req.voice_profile:
-        ok_audio, audio_reason = verify_video_audio_matches_text(
+        ok_audio, audio_reason, audio_duration = verify_video_audio_matches_text(
             text=text,
             voice_profile=req.voice_profile,
             video_path=video_path,
@@ -139,7 +139,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
                 S_blink=0.0,
                 # S_flow=0.0,
                 # S_lpips=0.0,
-                duration_sec=None,
+                duration_sec=audio_duration,
                 reason="incorrect audio",
             )
 
@@ -159,7 +159,7 @@ def score(req: ScoreRequest) -> ScoreResponse:
             S_blink=0.0,
             # S_flow=0.0,
             # S_lpips=0.0,
-            duration_sec=None,
+            duration_sec=audio_duration,
             reason="exception_during_evaluation",
         )
 
@@ -175,8 +175,8 @@ def score(req: ScoreRequest) -> ScoreResponse:
         S_blink=scores.S_blink,
         # S_flow=scores.S_flow,
         # S_lpips=scores.S_lpips,
-        duration_sec=scores.video_duration,
-        reason=scores.reason,
+        duration_sec=audio_duration,
+        reason=f'{scores.reason}; duration={audio_duration:.2f}',
     )
 
 if __name__ == "__main__":

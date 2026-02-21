@@ -14,17 +14,22 @@ class VoiceSwitcher:
         self.piper_voice_dir = piper_voice_dir
 
         self.voices = {}
-        # Load voices (download ONNX files to ./voices/) iterating all files in the piper_voice_dir deeply
+        self.voice_paths = {}
+        # Index voices without loading models (lazy load on demand).
         for root, dirs, files in os.walk(piper_voice_dir):
             for file in files:
                 if os.path.join(root, file).endswith(".onnx") and file.startswith("en"):
                     voice_name = os.path.splitext(file)[0]
-                    self.voices[voice_name] = PiperVoice.load(os.path.join(root, file))
+                    self.voice_paths[voice_name] = os.path.join(root, file)
 
     def generate_audio(self, text: str, voice_profile: str = "en_US-lessac-medium"):
-        if voice_profile not in self.voices:
-            raise ValueError(f"Voice {voice_profile} not found")
-        voice = self.voices[voice_profile]
+        voice = self.voices.get(voice_profile)
+        if voice is None:
+            voice_path = self.voice_paths.get(voice_profile)
+            if voice_path is None:
+                raise ValueError(f"Voice {voice_profile} not found")
+            voice = PiperVoice.load(voice_path)
+            self.voices[voice_profile] = voice
         output_path = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
         with wave.open(output_path, "wb") as f:
             voice.synthesize_wav(text, f)

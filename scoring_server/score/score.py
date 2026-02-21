@@ -106,10 +106,10 @@ def evaluate_miner(e: MinerEvalInput) -> MinerEvalScores:
     for name, res in results.items():
         raw_str = res.raw if res.raw is not None else "-"
         reason_parts.append(f"{name}={res.score:.2f} ({raw_str}; {res.detail})")
-    if video_duration is not None:
-        reason_parts.append(f"video_duration={video_duration:.2f}")
-    else:
-        reason_parts.append("video_duration=unavailable")
+    # if video_duration is not None:
+    #     reason_parts.append(f"video_duration={video_duration:.2f}")
+    # else:
+    #     reason_parts.append("video_duration=unavailable")
     reason = "; ".join(reason_parts)
 
     return MinerEvalScores(

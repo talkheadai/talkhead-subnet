@@ -1,7 +1,6 @@
 from functools import lru_cache
 import contextlib
 import os
-import sys
 from pathlib import Path
 from typing import Tuple
 
@@ -11,21 +10,13 @@ def _suppress_output():
     devnull = os.open(os.devnull, os.O_WRONLY)
     stdout_fd = os.dup(1)
     stderr_fd = os.dup(2)
-    stdout = sys.stdout
-    stderr = sys.stderr
-    devnull_file = open(os.devnull, "w")
     try:
         os.dup2(devnull, 1)
         os.dup2(devnull, 2)
-        sys.stdout = devnull_file
-        sys.stderr = devnull_file
         yield
     finally:
         os.dup2(stdout_fd, 1)
         os.dup2(stderr_fd, 2)
-        sys.stdout = stdout
-        sys.stderr = stderr
-        devnull_file.close()
         os.close(stdout_fd)
         os.close(stderr_fd)
         os.close(devnull)
