@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "talkhead-subnet"
+version = "0.1.0"
+description = "TalkHead Subnet - A Bittensor subnet for talkhead generation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "TalkHead Subnet Team" }
+]
+dependencies = [
+    "bittensor>=8.0.0",
+    "bittensor-cli>=9.17.0",
+    "bittensor-wallet>=2.0.0",
+    "click>=8.0.0",
+    "pyyaml>=6.0.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.0.1"]
+
+[project.urls]
+Homepage = "https://github.com/talkhead-ai/talkhead-subnet"
+Issues = "https://github.com/talkhead-ai/talkhead-subnet/issues"
+
+[tool.setuptools]
+include-package-data = true
+py-modules = ["config", "utils"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["neurons*"]
+exclude = ["knowledge*"]
+
