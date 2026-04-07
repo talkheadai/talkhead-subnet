@@ -36,7 +36,7 @@ def load_config(path: str = "config.yaml") -> AppConfig:
         # Keep config.yaml miner-only: image_ref is read from YAML.
         image_ref=str(data.get("image_ref", "")),
         subnet_api_url=str(os.getenv("SUBNET_API_URL", "https://subnet.talkhead.ai")),
-        executor_url=str(os.getenv("EXECUTOR_API_URL", "http://localhost:9000")),
+        executor_url=str(os.getenv("EXECUTOR_API_URL", subnet_api_url)),
         wallet_name=str(os.getenv("WALLET_NAME", "default")),
         wallet_hotkey=str(os.getenv("HOTKEY_NAME", "default")),
         network=str(os.getenv("NETWORK", "finney")),

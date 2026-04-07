@@ -23,7 +23,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-INTERVAL_BLOCKS = 1
+INTERVAL_BLOCKS = 360
 SUBNET_API_URL= os.getenv("SUBNET_API_URL", "https://subnet.talkhead.ai")
 
 def _http_json(
@@ -61,7 +61,9 @@ class Validator:
         network = os.getenv("NETWORK", "finney")
         wallet_name = os.getenv("WALLET_NAME", "default")
         wallet_hotkey = os.getenv("HOTKEY_NAME", "default")
-        self.executor_url = os.getenv("EXECUTOR_API_URL", "http://localhost:9000")
+        self.executor_url = os.getenv("EXECUTOR_API_URL", SUBNET_API_URL)
+        if self.executor_url is None or len(self.executor_url) == 0:
+            self.executor_url = SUBNET_API_URL
         self.wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
         self.subtensor = bt.Subtensor(network=network)
         self.metagraph = bt.Metagraph(netuid=self.netuid, network=network)
@@ -99,7 +101,6 @@ class Validator:
         return self.subtensor.get_current_block()
 
     def _submission_update_step(self) -> None:
-        logger.info("Fetching submissions")
         status, submissions = _http_json(
             f"{SUBNET_API_URL.rstrip('/')}/submissions",
             "GET",
@@ -114,7 +115,6 @@ class Validator:
             logger.info("No submissions received; skipping update")
             return
 
-        logger.info("Updating executor")
         exec_status, exec_response = _http_json(
             f"{self.executor_url.rstrip('/')}/update",
             "POST",
@@ -125,9 +125,10 @@ class Validator:
             logger.warning(
                 f"Executor update failed (status={exec_status}): {exec_response}"
             )
+        else:
+            logger.info(f"Executor update successful (status={exec_status}): {exec_response}")
 
     def _weight_setting_step(self) -> None:
-        logger.info("Fetching scores")
         score_status, scores = _http_json(
             f"{self.executor_url.rstrip('/')}/scores",
             "GET",
@@ -149,7 +150,6 @@ class Validator:
             return
         winner_hotkey, _winner_score = winner
 
-        logger.info("Fetching burn ratio")
         burn_ratio = 1.0
         burn_status, burn_response = _http_json(
             f"{SUBNET_API_URL.rstrip('/')}/burn_ratio",
@@ -168,6 +168,7 @@ class Validator:
         burn_ratio_value = burn_response.get("burn_ratio")
         try:
             burn_ratio = max(0.0, min(1.0, float(burn_ratio_value)))
+            logger.info(f"Fetched burn ratio: {burn_ratio}")
         except (TypeError, ValueError):
             logger.warning(f"Invalid burn ratio payload: {burn_response}")
 
@@ -211,7 +212,7 @@ class Validator:
 
     def _set_burn_only_weights(self) -> None:
 
-        logger.info("Setting weights")
+        logger.info("Setting burn only weights")
         response = self.subtensor.set_weights(
             wallet=self.wallet,
             netuid=self.netuid,
