@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 INTERVAL_BLOCKS = 360
 SUBNET_API_URL= os.getenv("SUBNET_API_URL", "https://subnet.talkhead.ai")
 
+def _header_dict(msg: object) -> dict[str, str]:
+    return {k.lower(): v for k, v in msg.items()}
+
+
 def _http_json(
     url: str,
     method: str,
@@ -33,6 +37,19 @@ def _http_json(
     headers: dict[str, str] | None = None,
     timeout: int = 30,
 ) -> tuple[int, object]:
+    status, payload, _hdrs = _http_json_with_headers(
+        url, method, body=body, headers=headers, timeout=timeout
+    )
+    return status, payload
+
+
+def _http_json_with_headers(
+    url: str,
+    method: str,
+    body: object | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> tuple[int, object, dict[str, str]]:
     payload = None
     if body is not None:
         payload = json.dumps(body).encode("utf-8")
@@ -44,15 +61,19 @@ def _http_json(
     try:
         with request.urlopen(req, timeout=timeout) as response:
             raw = response.read().decode("utf-8")
-            return response.status, json.loads(raw) if raw else None
+            hdrs = _header_dict(response.headers)
+            return response.status, json.loads(raw) if raw else None, hdrs
     except error.HTTPError as http_err:
+        hdrs = _header_dict(http_err.headers)
         raw = http_err.read().decode("utf-8")
+        if http_err.code == 304:
+            return 304, None, hdrs
         try:
-            return http_err.code, json.loads(raw) if raw else None
+            return http_err.code, json.loads(raw) if raw else None, hdrs
         except json.JSONDecodeError:
-            return http_err.code, raw
+            return http_err.code, raw, hdrs
     except Exception as exc:  # noqa: BLE001
-        return 0, str(exc)
+        return 0, str(exc), {}
 
 
 class Validator:
@@ -73,19 +94,22 @@ class Validator:
         if self.burn_uid < 0 or self.burn_uid >= len(self.metagraph.hotkeys):
             logger.warning(f"Burn UID out of range: {self.burn_uid}")
             self.burn_uid = 0
+        self._metrics_etag: str | None = None
+        self._metrics_cache: list | None = None
 
     @staticmethod
-    def _pick_winner(scores: list[dict]) -> tuple[str, float] | None:
+    def _pick_winner(metrics_list: list[dict]) -> tuple[str, float] | None:
+        logger.info(f"Picking winner from {len(metrics_list)} metrics")
         valid: list[tuple[str, float]] = []
-        for row in scores:
+        for row in metrics_list:
             if not isinstance(row, dict):
                 continue
             hotkey = row.get("hotkey")
-            score = row.get("score")
-            if not isinstance(hotkey, str):
+            metrics = row.get("metrics")
+            if not isinstance(hotkey, str) or not isinstance(metrics, dict):
                 continue
             try:
-                value = float(score)
+                value = float(metrics.get("final_score"))
             except (TypeError, ValueError):
                 continue
             if not math.isfinite(value):
@@ -129,24 +153,41 @@ class Validator:
             logger.info(f"Executor update successful (status={exec_status}): {exec_response}")
 
     def _weight_setting_step(self) -> None:
-        score_status, scores = _http_json(
-            f"{self.executor_url.rstrip('/')}/scores",
+        req_headers = dict(signed_subnet_headers(self.wallet, "/metrics"))
+        if self._metrics_etag:
+            req_headers["If-None-Match"] = self._metrics_etag
+
+        metric_status, metrics_payload, resp_headers = _http_json_with_headers(
+            f"{self.executor_url.rstrip('/')}/metrics",
             "GET",
-            headers=signed_subnet_headers(self.wallet, "/scores"),
+            headers=req_headers,
         )
-        if (
-            score_status < 200
-            or score_status >= 300
-            or not isinstance(scores, list)
-            or len(scores) == 0
-        ):
-            logger.info("No scores available; burning all")
+
+        if metric_status == 304:
+            if self._metrics_cache is None:
+                logger.warning(
+                    "Metrics 304 Not Modified but no cached rows; burning all"
+                )
+                self._set_burn_only_weights()
+                return
+            logger.info("Metrics unchanged (304); skipping weight setting")
+            return
+        elif 200 <= metric_status < 300:
+            self._metrics_etag = resp_headers.get("etag") or None
+            metrics_list = metrics_payload
+            if isinstance(metrics_list, list):
+                self._metrics_cache = metrics_list
+        else:
+            metrics_list = metrics_payload
+
+        if not isinstance(metrics_list, list) or len(metrics_list) == 0:
+            logger.info("No metrics available; burning all")
             self._set_burn_only_weights()
             return
 
-        winner = self._pick_winner(scores)
+        winner = self._pick_winner(metrics_list)
         if winner is None:
-            logger.info("All scores invalid; skipping weight update")
+            logger.info("All metrics invalid; skipping weight setting")
             return
         winner_hotkey, _winner_score = winner
 
