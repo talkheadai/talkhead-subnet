@@ -109,7 +109,7 @@ class Validator:
             if not isinstance(hotkey, str) or not isinstance(metrics, dict):
                 continue
             try:
-                value = float(metrics.get("final_score", 0.0))
+                value = float(metrics.get("final_score"))
             except (TypeError, ValueError):
                 continue
             if not math.isfinite(value):
