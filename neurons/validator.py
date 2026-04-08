@@ -23,7 +23,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
-INTERVAL_BLOCKS = 1
+INTERVAL_BLOCKS = 360
 SUBNET_API_URL= os.getenv("SUBNET_API_URL", "https://subnet.talkhead.ai")
 
 def _header_dict(msg: object) -> dict[str, str]:
@@ -106,10 +106,10 @@ class Validator:
                 continue
             hotkey = row.get("hotkey")
             metrics = row.get("metrics")
-            if not isinstance(hotkey, str):
+            if not isinstance(hotkey, str) or not isinstance(metrics, dict):
                 continue
             try:
-                value = float(metrics.get('final_score'))
+                value = float(metrics.get("final_score", 0.0))
             except (TypeError, ValueError):
                 continue
             if not math.isfinite(value):
@@ -170,7 +170,6 @@ class Validator:
                 )
                 self._set_burn_only_weights()
                 return
-            metrics_list = self._metrics_cache
             logger.info("Metrics unchanged (304); skipping weight setting")
             return
         elif 200 <= metric_status < 300:
