@@ -106,10 +106,10 @@ class Validator:
                 continue
             hotkey = row.get("hotkey")
             metrics = row.get("metrics")
-            if not isinstance(hotkey, str):
+            if not isinstance(hotkey, str) or not isinstance(metrics, dict):
                 continue
             try:
-                value = float(metrics.get('final_score'))
+                value = float(metrics.get("final_score"))
             except (TypeError, ValueError):
                 continue
             if not math.isfinite(value):
