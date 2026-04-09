@@ -177,9 +177,7 @@ def load_config(
     if wandb_overrides:
         cfg = replace(cfg, wandb=replace(cfg.wandb, **wandb_overrides))
 
-    if not executor_env_nonempty:
-        cfg = replace(cfg, executor_url=cfg.subnet_api_url)
-    elif not cfg.executor_url.strip():
+    if not cfg.executor_url.strip():
         cfg = replace(cfg, executor_url=cfg.subnet_api_url)
     return cfg
 
@@ -194,12 +192,6 @@ def _bt_cli_was_set(bt_cfg: Any, key: str) -> bool:
 
 def load_app_config(bt_cfg: Any) -> AppConfig:
     """Merge bt.Config with env: only CLI-given flags override; else env defaults for the rest."""
-    wandb_off: bool | None = None
-    if _bt_cli_was_set(bt_cfg, "wandb_off"):
-        wandb_off = True
-    elif _bt_cli_was_set(bt_cfg, "wandb_enable"):
-        wandb_off = False
-
     return load_config(
         image_ref=getattr(bt_cfg, "image_ref", None)
         if _bt_cli_was_set(bt_cfg, "image_ref")
@@ -223,6 +215,6 @@ def load_app_config(bt_cfg: Any) -> AppConfig:
             getattr(bt_cfg, "wandb_testnet_project_name", WANDB_TESTNET_PROJECT_NAME_DEFAULT)
         ),
         wandb_entity=str(getattr(bt_cfg, "wandb_entity", WANDB_ENTITY_DEFAULT)),
-        wandb_off=wandb_off,
+        wandb_off=True if getattr(bt_cfg, "wandb_off", None) else False,
         wandb_offline=True if _bt_cli_was_set(bt_cfg, "wandb_offline") else None,
     )

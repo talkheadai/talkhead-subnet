@@ -14,6 +14,7 @@ import numpy as np
 from config import AppConfig, config, load_app_config
 from utils import __version__
 from utils.sign import signed_subnet_headers
+from utils.logging import maybe_reset_wandb
 
 import wandb
 from datetime import datetime, timezone
@@ -22,13 +23,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-logger = logging.getLogger(__name__)
-INTERVAL_BLOCKS = 360
+INTERVAL_BLOCKS = 1
 
 def _header_dict(msg: object) -> dict[str, str]:
     return {k.lower(): v for k, v in msg.items()}
@@ -101,7 +96,7 @@ class Validator:
             self.subtensor.subnet(netuid=self.netuid).owner_hotkey
         )
         if self.burn_uid < 0 or self.burn_uid >= len(self.metagraph.hotkeys):
-            logger.warning(f"Burn UID out of range: {self.burn_uid}")
+            bt.logging.warning(f"Burn UID out of range: {self.burn_uid}")
             self.burn_uid = 0
         self._metrics_etag: str | None = None
         self._metrics_cache: list | None = None
@@ -131,9 +126,9 @@ class Validator:
                 dir=self.config.full_path or None,
                 mode="offline" if self.config.wandb.offline else None,
             ).id
-        except wandb.UsageError as e:
-            bt.logging.warning(e)
-            bt.logging.warning("Did you run wandb login?")
+        except Exception as e:
+            bt.logging.error(f"Failed to initialize W&B run: {e}")
+            self.config.wandb.off = True
             return
 
         self._wandb_start_date = datetime.now(timezone.utc).date()
@@ -147,7 +142,7 @@ class Validator:
 
     @staticmethod
     def _pick_winner(metrics_list: list[dict]) -> tuple[str, float] | None:
-        logger.info(f"Picking winner from {len(metrics_list)} metrics")
+        bt.logging.info(f"Picking winner from {len(metrics_list)} metrics")
         valid: list[tuple[str, float]] = []
         for row in metrics_list:
             if not isinstance(row, dict):
@@ -166,7 +161,18 @@ class Validator:
 
         if not valid:
             return None
-        return max(valid, key=lambda item: item[1])
+        try:
+            bt.logging.info(f"🏆 Winner Hotkey: {valid[0][0]}")
+            winner_metrics_row = next((row for row in metrics_list if row.get("hotkey") == valid[0][0]), None)
+            if winner_metrics_row is None:
+                bt.logging.warning(f"Winner metrics row not found for hotkey: {valid[0][0]}")
+                return None
+            winner_metrics = winner_metrics_row.get("metrics")
+            bt.logging.info(f"Winner Metrics: {json.dumps(winner_metrics, indent=4)}")
+            return max(valid, key=lambda item: item[1])
+        except Exception as e:
+            bt.logging.error(f"Error getting winner metrics: {e}")
+            return None
 
     def _sync_and_get_current_block(self) -> int:
         self.metagraph.sync(subtensor=self.subtensor)
@@ -179,12 +185,12 @@ class Validator:
             headers=signed_subnet_headers(self.wallet, "/submissions"),
         )
         if status < 200 or status >= 300 or not isinstance(submissions, list):
-            logger.warning(
+            bt.logging.warning(
                 f"Failed to fetch submissions (status={status}): {submissions}"
             )
             return
         if len(submissions) == 0:
-            logger.info("No submissions received; skipping update")
+            bt.logging.info("No submissions received; skipping update")
             return
 
         exec_status, exec_response = _http_json(
@@ -194,11 +200,11 @@ class Validator:
             body=submissions,
         )
         if not (200 <= exec_status < 300):
-            logger.warning(
+            bt.logging.warning(
                 f"Executor update failed (status={exec_status}): {exec_response}"
             )
         else:
-            logger.info(f"Executor update successful (status={exec_status}): {exec_response}")
+            bt.logging.info(f"Executor update successful (status={exec_status}): {exec_response}")
 
     def _weight_setting_step(self) -> None:
         req_headers = dict(signed_subnet_headers(self.wallet, "/metrics"))
@@ -213,12 +219,12 @@ class Validator:
 
         if metric_status == 304:
             if self._metrics_cache is None:
-                logger.warning(
+                bt.logging.warning(
                     "Metrics 304 Not Modified but no cached rows; burning all"
                 )
                 self._set_burn_only_weights()
                 return
-            logger.info("Metrics unchanged (304); skipping weight setting")
+            bt.logging.warning("Metrics unchanged (304); skipping weight setting")
             return
         elif 200 <= metric_status < 300:
             self._metrics_etag = resp_headers.get("etag") or None
@@ -229,16 +235,16 @@ class Validator:
             metrics_list = metrics_payload
 
         if not isinstance(metrics_list, list) or len(metrics_list) == 0:
-            logger.info("No metrics available; burning all")
+            bt.logging.info("No metrics available; burning all")
             self._set_burn_only_weights()
             return
 
         self.do_wandb_logging(metrics_list)
         winner = self._pick_winner(metrics_list)
         if winner is None:
-            logger.info("All metrics invalid; skipping weight setting")
+            bt.logging.warning("All metrics invalid; skipping weight setting")
             return
-        winner_hotkey, _winner_score = winner
+        winner_hotkey, _ = winner
 
         burn_ratio = 1.0
         burn_status, burn_response = _http_json(
@@ -251,20 +257,20 @@ class Validator:
             or burn_status >= 300
             or not isinstance(burn_response, dict)
         ):
-            logger.warning(
+            bt.logging.warning(
                 f"Failed to fetch burn ratio (status={burn_status}): {burn_response}"
             )
 
         burn_ratio_value = burn_response.get("burn_ratio")
         try:
             burn_ratio = max(0.0, min(1.0, float(burn_ratio_value)))
-            logger.info(f"Fetched burn ratio: {burn_ratio}")
+            bt.logging.info(f"Burn ratio: {burn_ratio}")
         except (TypeError, ValueError):
-            logger.warning(f"Invalid burn ratio payload: {burn_response}")
+            bt.logging.warning(f"Invalid burn ratio payload: {burn_response}")
 
         self.metagraph.sync(subtensor=self.subtensor)
         if winner_hotkey not in self.metagraph.hotkeys:
-            logger.warning(f"Winner hotkey not found in metagraph: {winner_hotkey}")
+            bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey}")
             return
         winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
 
@@ -277,17 +283,16 @@ class Validator:
 
         total = sum(weight_by_uid.values())
         if total <= 0:
-            logger.warning("Computed zero total weight; skipping")
+            bt.logging.warning("Computed zero total weight; skipping")
             return
         if abs(total - 1.0) > 1e-9:
             weight_by_uid = {uid: value / total for uid, value in weight_by_uid.items()}
 
         uids = np.array(list(weight_by_uid.keys()), dtype=np.int64)
         weights = np.array(list(weight_by_uid.values()), dtype=np.float32)
-        logger.info("Setting weights")
-        logger.info(f"Winner: {winner_hotkey}")
-        logger.info(f"None-zero uids: {weight_by_uid.keys()}")
-        logger.info(f"None-zero weights: {weight_by_uid.values()}")
+        bt.logging.info("Setting weights")
+        bt.logging.info(f"None-zero uids: {weight_by_uid.keys()}")
+        bt.logging.info(f"None-zero weights: {weight_by_uid.values()}")
         
         response = self.subtensor.set_weights(
             wallet=self.wallet,
@@ -298,11 +303,11 @@ class Validator:
             wait_for_finalization=False,
         )
         if response.success != True:
-            logger.warning("set_weights() returned failure")
+            bt.logging.warning("set_weights() returned failure")
 
     def _set_burn_only_weights(self) -> None:
 
-        logger.info("Setting burn only weights")
+        bt.logging.info("Setting burn only weights")
         response = self.subtensor.set_weights(
             wallet=self.wallet,
             netuid=self.netuid,
@@ -312,7 +317,7 @@ class Validator:
             wait_for_finalization=False,
         )
         if response.success != True:
-            logger.warning("set_weights() returned failure")
+            bt.logging.warning("set_weights() returned failure")
 
 
     def do_wandb_logging(
@@ -322,26 +327,22 @@ class Validator:
         if self.config.wandb.off:
             return
 
-        # total_uids = [row.get("uid") for row in metrics_list]
-        # total_composites = [row.get("composite") for row in metrics_list]
-        # total_latency_scores = [row.get("latency_score") for row in metrics_list]
-        # applied_rewards = [row.get("applied_reward") for row in metrics_list]
-        # detailed_metrics = [row.get("detailed_metric") for row in metrics_list]
-
-        # uid_to_hotkey = {uid: self.metagraph.hotkeys[uid] for uid in total_uids}
-        # for uid, composite, latency_score, applied_reward, detailed_metric in zip(total_uids, total_composites, total_latency_scores, applied_rewards, detailed_metrics):
-        #     wandb.log(
-        #         {
-        #             f"miner_{uid}_{uid_to_hotkey[uid]}_composite": composite,
-        #             f"miner_{uid}_{uid_to_hotkey[uid]}_latency_score": latency_score,
-        #             f"miner_{uid}_{uid_to_hotkey[uid]}_reward": applied_reward,
-        #             f"miner_{uid}_{uid_to_hotkey[uid]}_syncnet": detailed_metric.get("S_syncnet", 0.0),
-        #             f"miner_{uid}_{uid_to_hotkey[uid]}_arcface": detailed_metric.get("S_arcface", 0.0),
-        #             f"miner_{uid}_{uid_to_hotkey[uid]}_quality": detailed_metric.get("S_quality", 0.0),
-        #             f"miner_{uid}_{uid_to_hotkey[uid]}_blink": detailed_metric.get("S_blink", 0.0),
-        #             f"miner_{uid}_{uid_to_hotkey[uid]}_reason": detailed_metric.get("reason", ""),
-        #         },
-        #     )
+        for metric in metrics_list:
+            hotkey = metric.get("hotkey")
+            try:
+                uid = self.metagraph.hotkeys.index(hotkey)
+            except ValueError:
+                bt.logging.warning(f"Hotkey not found in metagraph: {hotkey}")
+                continue
+            metrics = metric.get("metrics")
+            if metrics is not None:
+                wandb.log(
+                    {
+                        f"miner_{uid}_{hotkey}_final_score": metrics.get("final_score", 0.0),
+                        f"miner_{uid}_{hotkey}_quality_score": metrics.get("quality_score", 0.0),
+                        f"miner_{uid}_{hotkey}_peak_vram_gb": metrics.get("peak_vram_gb", 0.0),
+                        f"miner_{uid}_{hotkey}_inference_time_sec": metrics.get("inference_time_sec", 0.0),}
+                )
 
     def run(self) -> None:
         last_cycle_block = -1
@@ -358,23 +359,24 @@ class Validator:
                 try:
                     self._submission_update_step()
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning(f"submission_update_step error: {exc}")
+                    bt.logging.warning(f"submission_update_step error: {exc}")
 
                 try:
                     self._weight_setting_step()
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning(f"weight_setting_step error: {exc}")
+                    bt.logging.warning(f"weight_setting_step error: {exc}")
 
                 last_cycle_block = current_block
+
+                # prevent W&B logs from becoming massive
+                maybe_reset_wandb(self)
                 # time.sleep(12)
         except KeyboardInterrupt:
-            logger.info("Validator stopped by user")
+            bt.logging.info("Validator stopped by user")
 
 
 def main() -> None:
-    bt_cfg = config()
-    cfg = load_app_config(bt_cfg)
-    logger.info(f"Validator config: {cfg}")
+    cfg = load_app_config(config())
     Validator(cfg).run()
 
 

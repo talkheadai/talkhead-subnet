@@ -42,7 +42,7 @@ def main() -> None:
     cfg = load_app_config(bt_cfg)
     image_ref = _resolve_image_ref(getattr(bt_cfg, "image_ref", None), cfg.image_ref)
     if "@sha256:" not in image_ref:
-        bt.logging.error("Error: image_ref must include '@sha256:'.", file=sys.stderr)
+        bt.logging.error("Error: image_ref must include '@sha256:'.")
         sys.exit(1)
 
     wallet = bt.Wallet(name=cfg.wallet_name, hotkey=cfg.wallet_hotkey)
@@ -56,7 +56,7 @@ def main() -> None:
         bt.logging.success(f"Success: {response}")
         return
 
-    bt.logging.error(f"Error ({status}): {response}", file=sys.stderr)
+    bt.logging.error(f"Error ({status}): {response}")
     sys.exit(1)
 
 
