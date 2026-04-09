@@ -34,6 +34,7 @@ class AppConfig:
     netuid: int = 108
     full_path: str = ""
     wandb: WandbConfig = field(default_factory=WandbConfig)
+    signature: str = ""
 
 
 def _as_int(value: Any, default: int) -> int:
@@ -133,6 +134,7 @@ def load_config(
     wandb_entity: str | None = None,
     wandb_off: bool | None = None,
     wandb_offline: bool | None = None,
+    signature: str | None = None,
 ) -> AppConfig:
     subnet_api_url = str(os.getenv("SUBNET_API_URL", "https://subnet.talkhead.ai"))
 

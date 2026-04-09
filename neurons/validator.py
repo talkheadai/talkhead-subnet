@@ -161,9 +161,10 @@ class Validator:
 
         if not valid:
             return None
+        winner = max(valid, key=lambda item: item[1])
         try:
-            bt.logging.info(f"🏆 Winner Hotkey: {valid[0][0]}")
-            winner_metrics_row = next((row for row in metrics_list if row.get("hotkey") == valid[0][0]), None)
+            bt.logging.info(f"🏆 Winner Hotkey: {winner[0]}")
+            winner_metrics_row = next((row for row in metrics_list if row.get("hotkey") == winner[0]), None)
             if winner_metrics_row is None:
                 bt.logging.warning(f"Winner metrics row not found for hotkey: {valid[0][0]}")
                 return None
@@ -336,12 +337,17 @@ class Validator:
                 continue
             metrics = metric.get("metrics")
             if metrics is not None:
+                if metrics.get("error") is not None:
+                    bt.logging.warning(f"Error for hotkey {hotkey}: {metrics.get('error')}")
+                    continue
+                efficiency = metrics.get("efficiency", {})
                 wandb.log(
                     {
                         f"miner_{uid}_{hotkey}_final_score": metrics.get("final_score", 0.0),
                         f"miner_{uid}_{hotkey}_quality_score": metrics.get("quality_score", 0.0),
-                        f"miner_{uid}_{hotkey}_peak_vram_gb": metrics.get("peak_vram_gb", 0.0),
-                        f"miner_{uid}_{hotkey}_inference_time_sec": metrics.get("inference_time_sec", 0.0),}
+                        f"miner_{uid}_{hotkey}_peak_vram_gb": efficiency.get("peak_vram_gb", 0.0),
+                        f"miner_{uid}_{hotkey}_inference_time_sec": efficiency.get("inference_time_sec", 0.0),
+                    }
                 )
 
     def run(self) -> None:

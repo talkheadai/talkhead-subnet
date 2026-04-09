@@ -34,5 +34,3 @@ py-modules = ["config", "utils"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["neurons*"]
-exclude = ["knowledge*"]
-
