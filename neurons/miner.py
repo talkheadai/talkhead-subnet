@@ -1,14 +1,11 @@
-import click
 import json
 import os
 import sys
-from datetime import datetime, timezone
 from urllib import error, request
 
 import bittensor as bt
-
-from config import load_config
-from utils import signed_subnet_headers
+from config import config, load_app_config
+from utils.sign import signed_subnet_headers
 
 
 def _post_json(url: str, body: dict, headers: dict[str, str], timeout: int = 30) -> tuple[int, str]:
@@ -27,34 +24,39 @@ def _post_json(url: str, body: dict, headers: dict[str, str], timeout: int = 30)
         return 0, str(exc)
 
 
-@click.command()
-@click.option("--image", default="", help="Container image ref (must include @sha256:...)")
-@click.option("--config-path", default="config.yaml", help="Path to config.yaml")
-def main(image: str, config_path: str) -> None:
+def _resolve_image_ref(cli_image_ref: str | None, cfg_image_ref: str) -> str:
+    if cli_image_ref is not None and cli_image_ref.strip():
+        return cli_image_ref.strip()
+    env_ref = os.getenv("IMAGE_REF", "").strip()
+    if env_ref:
+        return env_ref
+    return (cfg_image_ref or "").strip()
+
+
+def main() -> None:
     """
     TalkHead miner entrypoint.
     This miner is submission-only and does not serve axon requests.
     """
-    cfg = load_config(config_path)
-    image_ref = image or os.getenv("IMAGE_REF", "")
+    bt_cfg = config()
+    cfg = load_app_config(bt_cfg)
+    image_ref = _resolve_image_ref(getattr(bt_cfg, "image_ref", None), cfg.image_ref)
     if "@sha256:" not in image_ref:
-        click.echo("Error: image image_ref must include '@sha256:'.")
+        bt.logging.error("Error: image_ref must include '@sha256:'.", file=sys.stderr)
         sys.exit(1)
 
     wallet = bt.Wallet(name=cfg.wallet_name, hotkey=cfg.wallet_hotkey)
-    
-    
 
-    click.echo("Submitting image image_ref")
+    bt.logging.info("Submitting image image_ref")
     body = {"hotkey": wallet.hotkey.ss58_address, "image_ref": image_ref}
-    headers = signed_subnet_headers(wallet, '/submit')
+    headers = signed_subnet_headers(wallet, "/submit")
 
     status, response = _post_json(f"{cfg.subnet_api_url.rstrip('/')}/submit", body, headers)
     if 200 <= status < 300:
-        click.echo(f"Success: {response}")
+        bt.logging.success(f"Success: {response}")
         return
 
-    click.echo(f"Error ({status}): {response}")
+    bt.logging.error(f"Error ({status}): {response}", file=sys.stderr)
     sys.exit(1)
 
 

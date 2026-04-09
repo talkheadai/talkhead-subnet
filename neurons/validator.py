@@ -1,17 +1,22 @@
 from __future__ import annotations
 
+import bittensor as bt
 import json
 import logging
 import math
 import os
 import time
+from dataclasses import replace
 from urllib import error, request
 
-import bittensor as bt
-import click
 import numpy as np
 
-from utils import signed_subnet_headers
+from config import AppConfig, config, load_app_config
+from utils import __version__
+from utils.sign import signed_subnet_headers
+
+import wandb
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
@@ -24,7 +29,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 INTERVAL_BLOCKS = 360
-SUBNET_API_URL= os.getenv("SUBNET_API_URL", "https://subnet.talkhead.ai")
 
 def _header_dict(msg: object) -> dict[str, str]:
     return {k.lower(): v for k, v in msg.items()}
@@ -77,17 +81,22 @@ def _http_json_with_headers(
 
 
 class Validator:
-    def __init__(self) -> None:
-        self.netuid = int(os.getenv("NETUID", "108"))
-        network = os.getenv("NETWORK", "finney")
-        wallet_name = os.getenv("WALLET_NAME", "default")
-        wallet_hotkey = os.getenv("HOTKEY_NAME", "default")
-        self.executor_url = os.getenv("EXECUTOR_API_URL", SUBNET_API_URL)
-        if self.executor_url is None or len(self.executor_url) == 0:
-            self.executor_url = SUBNET_API_URL
-        self.wallet = bt.Wallet(name=wallet_name, hotkey=wallet_hotkey)
-        self.subtensor = bt.Subtensor(network=network)
-        self.metagraph = bt.Metagraph(netuid=self.netuid, network=network)
+    def __init__(self, cfg: AppConfig) -> None:
+
+        self._app_cfg = cfg
+        self.netuid = cfg.netuid
+        self.subnet_api_url = cfg.subnet_api_url
+        self.executor_url = cfg.executor_url
+        if not self.executor_url:
+            self.executor_url = self.subnet_api_url
+        self.wallet = bt.Wallet(name=cfg.wallet_name, hotkey=cfg.wallet_hotkey)
+        self.subtensor = bt.Subtensor(network=cfg.network)
+        self.metagraph = bt.Metagraph(netuid=self.netuid, network=cfg.network)
+        self.config = replace(cfg, full_path=os.getcwd())
+        # Each miner gets a unique identity (UID) in the network for differentiation.
+        self.uid = self.metagraph.hotkeys.index(
+            self.wallet.hotkey.ss58_address
+        )
         self.burn_uid = self.metagraph.hotkeys.index(
             self.subtensor.subnet(netuid=self.netuid).owner_hotkey
         )
@@ -96,6 +105,45 @@ class Validator:
             self.burn_uid = 0
         self._metrics_etag: str | None = None
         self._metrics_cache: list | None = None
+        self.init_wandb()
+
+    def init_wandb(self) -> None:
+        if self.config.wandb.off:
+            return
+
+        run_name = f"validator-{self.uid}-{__version__}"
+        wandb_project = (
+            self.config.wandb.project_name
+            if self.subtensor.network != "test"
+            else self.config.wandb.testnet_project_name
+        )
+
+        # Initialize the wandb run for the single project
+        bt.logging.info(
+            f"Initializing W&B run for '{self.config.wandb.entity}/{wandb_project}'"
+        )
+        try:
+            run_id = wandb.init(
+                name=run_name,
+                project=wandb_project,
+                entity=self.config.wandb.entity or None,
+                config=self.config,
+                dir=self.config.full_path or None,
+                mode="offline" if self.config.wandb.offline else None,
+            ).id
+        except wandb.UsageError as e:
+            bt.logging.warning(e)
+            bt.logging.warning("Did you run wandb login?")
+            return
+
+        self._wandb_start_date = datetime.now(timezone.utc).date()
+
+        # Sign the run to ensure it's from the correct hotkey
+        signature = self.wallet.hotkey.sign(run_id.encode()).hex()
+        self.config.signature = signature
+        wandb.config.update(self.config, allow_val_change=True)
+
+        bt.logging.success(f"Started wandb run {run_name}")
 
     @staticmethod
     def _pick_winner(metrics_list: list[dict]) -> tuple[str, float] | None:
@@ -126,7 +174,7 @@ class Validator:
 
     def _submission_update_step(self) -> None:
         status, submissions = _http_json(
-            f"{SUBNET_API_URL.rstrip('/')}/submissions",
+            f"{self.subnet_api_url.rstrip('/')}/submissions",
             "GET",
             headers=signed_subnet_headers(self.wallet, "/submissions"),
         )
@@ -185,6 +233,7 @@ class Validator:
             self._set_burn_only_weights()
             return
 
+        self.do_wandb_logging(metrics_list)
         winner = self._pick_winner(metrics_list)
         if winner is None:
             logger.info("All metrics invalid; skipping weight setting")
@@ -193,7 +242,7 @@ class Validator:
 
         burn_ratio = 1.0
         burn_status, burn_response = _http_json(
-            f"{SUBNET_API_URL.rstrip('/')}/burn_ratio",
+            f"{self.subnet_api_url.rstrip('/')}/burn_ratio",
             "GET",
             headers=signed_subnet_headers(self.wallet, "/burn_ratio"),
         )
@@ -265,6 +314,35 @@ class Validator:
         if response.success != True:
             logger.warning("set_weights() returned failure")
 
+
+    def do_wandb_logging(
+            self, 
+            metrics_list: list[dict],
+        ):
+        if self.config.wandb.off:
+            return
+
+        # total_uids = [row.get("uid") for row in metrics_list]
+        # total_composites = [row.get("composite") for row in metrics_list]
+        # total_latency_scores = [row.get("latency_score") for row in metrics_list]
+        # applied_rewards = [row.get("applied_reward") for row in metrics_list]
+        # detailed_metrics = [row.get("detailed_metric") for row in metrics_list]
+
+        # uid_to_hotkey = {uid: self.metagraph.hotkeys[uid] for uid in total_uids}
+        # for uid, composite, latency_score, applied_reward, detailed_metric in zip(total_uids, total_composites, total_latency_scores, applied_rewards, detailed_metrics):
+        #     wandb.log(
+        #         {
+        #             f"miner_{uid}_{uid_to_hotkey[uid]}_composite": composite,
+        #             f"miner_{uid}_{uid_to_hotkey[uid]}_latency_score": latency_score,
+        #             f"miner_{uid}_{uid_to_hotkey[uid]}_reward": applied_reward,
+        #             f"miner_{uid}_{uid_to_hotkey[uid]}_syncnet": detailed_metric.get("S_syncnet", 0.0),
+        #             f"miner_{uid}_{uid_to_hotkey[uid]}_arcface": detailed_metric.get("S_arcface", 0.0),
+        #             f"miner_{uid}_{uid_to_hotkey[uid]}_quality": detailed_metric.get("S_quality", 0.0),
+        #             f"miner_{uid}_{uid_to_hotkey[uid]}_blink": detailed_metric.get("S_blink", 0.0),
+        #             f"miner_{uid}_{uid_to_hotkey[uid]}_reason": detailed_metric.get("reason", ""),
+        #         },
+        #     )
+
     def run(self) -> None:
         last_cycle_block = -1
         try:
@@ -293,9 +371,11 @@ class Validator:
             logger.info("Validator stopped by user")
 
 
-@click.command()
 def main() -> None:
-    Validator().run()
+    bt_cfg = config()
+    cfg = load_app_config(bt_cfg)
+    logger.info(f"Validator config: {cfg}")
+    Validator(cfg).run()
 
 
 if __name__ == "__main__":
