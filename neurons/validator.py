@@ -23,7 +23,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-INTERVAL_BLOCKS = 1
+INTERVAL_BLOCKS = 100
+
 
 def _header_dict(msg: object) -> dict[str, str]:
     return {k.lower(): v for k, v in msg.items()}
@@ -87,18 +88,22 @@ class Validator:
         self.wallet = bt.Wallet(name=cfg.wallet_name, hotkey=cfg.wallet_hotkey)
         self.subtensor = bt.Subtensor(network=cfg.network)
         self.metagraph = bt.Metagraph(netuid=self.netuid, network=cfg.network)
+        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:
+            bt.logging.error(
+                f"Validator is not registered in metagraph: {self.wallet.hotkey.ss58_address}"
+            )
+            exit()
+            
         self.config = replace(cfg, full_path=os.getcwd())
         # Each miner gets a unique identity (UID) in the network for differentiation.
-        self.uid = self.metagraph.hotkeys.index(
-            self.wallet.hotkey.ss58_address
-        )
+        self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         self.burn_uid = self.metagraph.hotkeys.index(
             self.subtensor.subnet(netuid=self.netuid).owner_hotkey
         )
         if self.burn_uid < 0 or self.burn_uid >= len(self.metagraph.hotkeys):
             bt.logging.warning(f"Burn UID out of range: {self.burn_uid}")
             self.burn_uid = 0
-        self._metrics_etag: str | None = None
+        self._metrics_etag: str | None = ""
         self._metrics_cache: list | None = None
         self.init_wandb()
 
@@ -161,19 +166,7 @@ class Validator:
 
         if not valid:
             return None
-        winner = max(valid, key=lambda item: item[1])
-        try:
-            bt.logging.info(f"🏆 Winner Hotkey: {winner[0]}")
-            winner_metrics_row = next((row for row in metrics_list if row.get("hotkey") == winner[0]), None)
-            if winner_metrics_row is None:
-                bt.logging.warning(f"Winner metrics row not found for hotkey: {valid[0][0]}")
-                return None
-            winner_metrics = winner_metrics_row.get("metrics")
-            bt.logging.info(f"Winner Metrics: {json.dumps(winner_metrics, indent=4)}")
-            return max(valid, key=lambda item: item[1])
-        except Exception as e:
-            bt.logging.error(f"Error getting winner metrics: {e}")
-            return None
+        return max(valid, key=lambda item: item[1])
 
     def _sync_and_get_current_block(self) -> int:
         self.metagraph.sync(subtensor=self.subtensor)
@@ -205,7 +198,9 @@ class Validator:
                 f"Executor update failed (status={exec_status}): {exec_response}"
             )
         else:
-            bt.logging.info(f"Executor update successful (status={exec_status}): {exec_response}")
+            bt.logging.info(
+                f"Executor update successful (status={exec_status}): {exec_response}"
+            )
 
     def _weight_setting_step(self) -> None:
         req_headers = dict(signed_subnet_headers(self.wallet, "/metrics"))
@@ -240,7 +235,7 @@ class Validator:
             self._set_burn_only_weights()
             return
 
-        self.do_wandb_logging(metrics_list)
+        self.do_logging(metrics_list)
         winner = self._pick_winner(metrics_list)
         if winner is None:
             bt.logging.warning("All metrics invalid; skipping weight setting")
@@ -262,12 +257,13 @@ class Validator:
                 f"Failed to fetch burn ratio (status={burn_status}): {burn_response}"
             )
 
-        burn_ratio_value = burn_response.get("burn_ratio")
         try:
+            burn_ratio_value = burn_response.get("burn_ratio")
             burn_ratio = max(0.0, min(1.0, float(burn_ratio_value)))
             bt.logging.info(f"Burn ratio: {burn_ratio}")
-        except (TypeError, ValueError):
-            bt.logging.warning(f"Invalid burn ratio payload: {burn_response}")
+        except Exception as e:
+            bt.logging.warning(f"Failed to parse burn ratio: {e}")
+            burn_ratio = 1.0
 
         self.metagraph.sync(subtensor=self.subtensor)
         if winner_hotkey not in self.metagraph.hotkeys:
@@ -294,7 +290,7 @@ class Validator:
         bt.logging.info("Setting weights")
         bt.logging.info(f"None-zero uids: {weight_by_uid.keys()}")
         bt.logging.info(f"None-zero weights: {weight_by_uid.values()}")
-        
+
         response = self.subtensor.set_weights(
             wallet=self.wallet,
             netuid=self.netuid,
@@ -320,14 +316,10 @@ class Validator:
         if response.success != True:
             bt.logging.warning("set_weights() returned failure")
 
-
-    def do_wandb_logging(
-            self, 
-            metrics_list: list[dict],
-        ):
-        if self.config.wandb.off:
-            return
-
+    def do_logging(
+        self,
+        metrics_list: list[dict],
+    ):
         for metric in metrics_list:
             hotkey = metric.get("hotkey")
             try:
@@ -338,17 +330,31 @@ class Validator:
             metrics = metric.get("metrics")
             if metrics is not None:
                 if metrics.get("error") is not None:
-                    bt.logging.warning(f"Error for hotkey {hotkey}: {metrics.get('error')}")
+                    bt.logging.warning(
+                        f"Invalid submission for hotkey {hotkey}: {metrics.get('error')}"
+                    )
                     continue
                 efficiency = metrics.get("efficiency", {})
-                wandb.log(
-                    {
-                        f"miner_{uid}_{hotkey}_final_score": metrics.get("final_score", 0.0),
-                        f"miner_{uid}_{hotkey}_quality_score": metrics.get("quality_score", 0.0),
-                        f"miner_{uid}_{hotkey}_peak_vram_gb": efficiency.get("peak_vram_gb", 0.0),
-                        f"miner_{uid}_{hotkey}_inference_time_sec": efficiency.get("inference_time_sec", 0.0),
-                    }
+                try:
+                    final_score = round(metrics.get("final_score", 0.0), 2)
+                    quality_score = round(metrics.get("quality_score", 0.0), 2)
+                    peak_vram_gb = round(efficiency.get("peak_vram_gb", 0.0), 2)
+                    inference_time_sec = round(efficiency.get("inference_time_sec", 0.0), 2)
+                except Exception as e:
+                    bt.logging.warning(f"Failed to parse metrics for hotkey {hotkey}: {e}")
+                    continue
+                bt.logging.info(
+                    f"Metrics for Miner {uid} | {hotkey}: Final Score {final_score} | Quality Score {quality_score} | Peak VRAM {peak_vram_gb} | Inference Time {inference_time_sec}"
                 )
+                if not self.config.wandb.off:
+                    wandb.log(
+                        {
+                            f"miner_{uid}_{hotkey}_final_score": final_score,
+                            f"miner_{uid}_{hotkey}_quality_score": quality_score,
+                            f"miner_{uid}_{hotkey}_peak_vram_gb": peak_vram_gb,
+                            f"miner_{uid}_{hotkey}_inference_time_sec": inference_time_sec,
+                        }
+                    )
 
     def run(self) -> None:
         last_cycle_block = -1
