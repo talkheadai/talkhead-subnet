@@ -89,10 +89,11 @@ class Validator:
         self.subtensor = bt.Subtensor(network=cfg.network)
         self.metagraph = bt.Metagraph(netuid=self.netuid, network=cfg.network)
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:
-            bt.logging.warning(
+            bt.logging.error(
                 f"Validator is not registered in metagraph: {self.wallet.hotkey.ss58_address}"
             )
-            return
+            exit()
+            
         self.config = replace(cfg, full_path=os.getcwd())
         # Each miner gets a unique identity (UID) in the network for differentiation.
         self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
@@ -319,9 +320,6 @@ class Validator:
         self,
         metrics_list: list[dict],
     ):
-        if self.config.wandb.off:
-            return
-
         for metric in metrics_list:
             hotkey = metric.get("hotkey")
             try:
@@ -337,21 +335,26 @@ class Validator:
                     )
                     continue
                 efficiency = metrics.get("efficiency", {})
-                final_score = round(metrics.get("final_score", 0.0), 2)
-                quality_score = round(metrics.get("quality_score", 0.0), 2)
-                peak_vram_gb = round(efficiency.get("peak_vram_gb", 0.0), 2)
-                inference_time_sec = round(efficiency.get("inference_time_sec", 0.0), 2)
+                try:
+                    final_score = round(metrics.get("final_score", 0.0), 2)
+                    quality_score = round(metrics.get("quality_score", 0.0), 2)
+                    peak_vram_gb = round(efficiency.get("peak_vram_gb", 0.0), 2)
+                    inference_time_sec = round(efficiency.get("inference_time_sec", 0.0), 2)
+                except Exception as e:
+                    bt.logging.warning(f"Failed to parse metrics for hotkey {hotkey}: {e}")
+                    continue
                 bt.logging.info(
                     f"Metrics for Miner {uid} | {hotkey}: Final Score {final_score} | Quality Score {quality_score} | Peak VRAM {peak_vram_gb} | Inference Time {inference_time_sec}"
                 )
-                wandb.log(
-                    {
-                        f"miner_{uid}_{hotkey}_final_score": final_score,
-                        f"miner_{uid}_{hotkey}_quality_score": quality_score,
-                        f"miner_{uid}_{hotkey}_peak_vram_gb": peak_vram_gb,
-                        f"miner_{uid}_{hotkey}_inference_time_sec": inference_time_sec,
-                    }
-                )
+                if not self.config.wandb.off:
+                    wandb.log(
+                        {
+                            f"miner_{uid}_{hotkey}_final_score": final_score,
+                            f"miner_{uid}_{hotkey}_quality_score": quality_score,
+                            f"miner_{uid}_{hotkey}_peak_vram_gb": peak_vram_gb,
+                            f"miner_{uid}_{hotkey}_inference_time_sec": inference_time_sec,
+                        }
+                    )
 
     def run(self) -> None:
         last_cycle_block = -1
