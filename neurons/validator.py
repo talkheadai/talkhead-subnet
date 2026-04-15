@@ -147,7 +147,6 @@ class Validator:
 
     @staticmethod
     def _pick_winner(metrics_list: list[dict]) -> tuple[str, float] | None:
-        bt.logging.info(f"Picking winner from {len(metrics_list)} metrics")
         valid: list[tuple[str, float]] = []
         for row in metrics_list:
             if not isinstance(row, dict):
@@ -198,7 +197,7 @@ class Validator:
                 f"Executor update failed (status={exec_status}): {exec_response}"
             )
         else:
-            bt.logging.info(
+            bt.logging.debug(
                 f"Executor update successful (status={exec_status}): {exec_response}"
             )
 
@@ -242,6 +241,9 @@ class Validator:
             return
         winner_hotkey, _ = winner
 
+        winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
+        bt.logging.info(f"🏆 Winner is Miner {winner_uid} | {winner_hotkey}")
+
         burn_ratio = 1.0
         burn_status, burn_response = _http_json(
             f"{self.subnet_api_url.rstrip('/')}/burn_ratio",
@@ -260,7 +262,6 @@ class Validator:
         try:
             burn_ratio_value = burn_response.get("burn_ratio")
             burn_ratio = max(0.0, min(1.0, float(burn_ratio_value)))
-            bt.logging.info(f"Burn ratio: {burn_ratio}")
         except Exception as e:
             bt.logging.warning(f"Failed to parse burn ratio: {e}")
             burn_ratio = 1.0
@@ -269,7 +270,6 @@ class Validator:
         if winner_hotkey not in self.metagraph.hotkeys:
             bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey}")
             return
-        winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
 
         weight_by_uid: dict[int, float] = {
             winner_uid: (1.0 - burn_ratio),
@@ -287,9 +287,9 @@ class Validator:
 
         uids = np.array(list(weight_by_uid.keys()), dtype=np.int64)
         weights = np.array(list(weight_by_uid.values()), dtype=np.float32)
-        bt.logging.info("Setting weights")
-        bt.logging.info(f"None-zero uids: {weight_by_uid.keys()}")
-        bt.logging.info(f"None-zero weights: {weight_by_uid.values()}")
+        bt.logging.debug("Setting weights")
+        bt.logging.debug(f"None-zero uids: {weight_by_uid.keys()}")
+        bt.logging.debug(f"None-zero weights: {weight_by_uid.values()}")
 
         response = self.subtensor.set_weights(
             wallet=self.wallet,
