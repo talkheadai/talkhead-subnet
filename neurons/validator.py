@@ -242,6 +242,7 @@ class Validator:
             return
         winner_hotkey, _ = winner
 
+        self.metagraph.sync(subtensor=self.subtensor)
         winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
         bt.logging.info(f"🏆 Winner is Miner {winner_uid} | {winner_hotkey}")
 
@@ -365,7 +366,8 @@ class Validator:
                     last_cycle_block >= 0
                     and current_block - last_cycle_block < INTERVAL_BLOCKS
                 ):
-                    # time.sleep(12)
+                    bt.logging.debug(f"Validator is running...")
+                    time.sleep(12 * 10) # Wating for 10 blocks
                     continue
                 
                 if self.subtensor.network != "test":
@@ -385,7 +387,6 @@ class Validator:
 
                 # prevent W&B logs from becoming massive
                 maybe_reset_wandb(self)
-                # time.sleep(12)
         except KeyboardInterrupt:
             bt.logging.info("Validator stopped by user")
 
