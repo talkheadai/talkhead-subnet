@@ -15,6 +15,7 @@ from config import AppConfig, config, load_app_config
 from utils import __version__
 from utils.sign import signed_subnet_headers
 from utils.logging import maybe_reset_wandb
+from utils.git import check_and_update_code
 
 import wandb
 from datetime import datetime, timezone
@@ -359,6 +360,8 @@ class Validator:
         last_cycle_block = -1
         try:
             while True:
+                if self.subtensor.network != "test":
+                    check_and_update_code()
                 current_block = self._sync_and_get_current_block()
                 if (
                     last_cycle_block >= 0
