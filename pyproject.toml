@@ -13,12 +13,9 @@ authors = [
   { name = "TalkHead Subnet Team" }
 ]
 dependencies = [
-    "bittensor>=8.0.0",
-    "bittensor-cli>=9.17.0",
-    "bittensor-wallet>=2.0.0",
-    "click>=8.0.0",
-    "pyyaml>=6.0.0",
-    "python-dotenv>=1.0",
+    "bittensor==10.2.0",
+    "python-dotenv==1.2.2",
+    "wandb==0.19.0",
 ]
 
 [project.optional-dependencies]
@@ -35,5 +32,3 @@ py-modules = ["config", "utils"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["neurons*"]
-exclude = ["knowledge*"]
-
