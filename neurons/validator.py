@@ -360,8 +360,6 @@ class Validator:
         last_cycle_block = -1
         try:
             while True:
-                if self.subtensor.network != "test":
-                    check_and_update_code()
                 current_block = self._sync_and_get_current_block()
                 if (
                     last_cycle_block >= 0
@@ -369,6 +367,9 @@ class Validator:
                 ):
                     # time.sleep(12)
                     continue
+                
+                if self.subtensor.network != "test":
+                    check_and_update_code()
 
                 try:
                     self._submission_update_step()
