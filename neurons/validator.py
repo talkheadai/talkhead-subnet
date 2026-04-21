@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-INTERVAL_BLOCKS = 100
+INTERVAL_BLOCKS = 180
 
 
 def _header_dict(msg: object) -> dict[str, str]:
