@@ -325,7 +325,6 @@ class Validator:
             try:
                 uid = self.metagraph.hotkeys.index(hotkey)
             except ValueError:
-                bt.logging.warning(f"Hotkey not found in metagraph: {hotkey}")
                 continue
             metrics = metric.get("metrics")
             if metrics is not None:
