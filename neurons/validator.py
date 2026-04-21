@@ -15,6 +15,7 @@ from config import AppConfig, config, load_app_config
 from utils import __version__
 from utils.sign import signed_subnet_headers
 from utils.logging import maybe_reset_wandb
+from utils.git import check_and_update_code
 
 import wandb
 from datetime import datetime, timezone
@@ -366,6 +367,9 @@ class Validator:
                 ):
                     # time.sleep(12)
                     continue
+                
+                if self.subtensor.network != "test":
+                    check_and_update_code()
 
                 try:
                     self._submission_update_step()
