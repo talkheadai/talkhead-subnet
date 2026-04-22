@@ -104,6 +104,7 @@ class Validator:
         if self.burn_uid < 0 or self.burn_uid >= len(self.metagraph.hotkeys):
             bt.logging.warning(f"Burn UID out of range: {self.burn_uid}")
             self.burn_uid = 0
+        self._winner_uid: int | None = None
         self._metrics_etag: str | None = ""
         self._metrics_cache: list | None = None
         self.init_wandb()
@@ -203,6 +204,7 @@ class Validator:
             )
 
     def _weight_setting_step(self) -> None:
+        keep_latest_weights = False
         req_headers = dict(signed_subnet_headers(self.wallet, "/metrics"))
         if self._metrics_etag:
             req_headers["If-None-Match"] = self._metrics_etag
@@ -220,8 +222,8 @@ class Validator:
                 )
                 self._set_burn_only_weights()
                 return
-            bt.logging.warning("Metrics unchanged (304); skipping weight setting")
-            return
+            bt.logging.warning("Metrics unchanged (304); keep the latest weights")
+            keep_latest_weights = True
         elif 200 <= metric_status < 300:
             self._metrics_etag = resp_headers.get("etag") or None
             metrics_list = metrics_payload
@@ -230,22 +232,33 @@ class Validator:
         else:
             metrics_list = metrics_payload
 
-        if not isinstance(metrics_list, list) or len(metrics_list) == 0:
-            bt.logging.info("No metrics available; burning all")
+        if not keep_latest_weights:
+            if not isinstance(metrics_list, list) or len(metrics_list) == 0:
+                bt.logging.info("No metrics available; burning all")
+                self._set_burn_only_weights()
+                return
+            self.do_logging(metrics_list)
+            winner = self._pick_winner(metrics_list)
+            if winner is None:
+                bt.logging.warning("All metrics invalid; burning all")
+                self._set_burn_only_weights()
+                return
+            winner_hotkey, _ = winner
+
+            self.metagraph.sync(subtensor=self.subtensor)
+            if winner_hotkey not in self.metagraph.hotkeys:
+                bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey} | Burning all")
+                self._set_burn_only_weights()
+                return
+
+            self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
+            bt.logging.info(f"🏆 Winner is Miner {self._winner_uid} | {winner_hotkey}")
+        
+        if self._winner_uid is None:
+            bt.logging.warning("No winner found; burning all")
             self._set_burn_only_weights()
             return
-
-        self.do_logging(metrics_list)
-        winner = self._pick_winner(metrics_list)
-        if winner is None:
-            bt.logging.warning("All metrics invalid; skipping weight setting")
-            return
-        winner_hotkey, _ = winner
-
-        self.metagraph.sync(subtensor=self.subtensor)
-        winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
-        bt.logging.info(f"🏆 Winner is Miner {winner_uid} | {winner_hotkey}")
-
+            
         burn_ratio = 1.0
         burn_status, burn_response = _http_json(
             f"{self.subnet_api_url.rstrip('/')}/burn_ratio",
@@ -268,21 +281,17 @@ class Validator:
             bt.logging.warning(f"Failed to parse burn ratio: {e}")
             burn_ratio = 1.0
 
-        self.metagraph.sync(subtensor=self.subtensor)
-        if winner_hotkey not in self.metagraph.hotkeys:
-            bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey}")
-            return
-
         weight_by_uid: dict[int, float] = {
-            winner_uid: (1.0 - burn_ratio),
+            self._winner_uid: (1.0 - burn_ratio),
             self.burn_uid: burn_ratio,
         }
-        if winner_uid == self.burn_uid:
-            weight_by_uid[winner_uid] = 1.0
+        if self._winner_uid == self.burn_uid:
+            weight_by_uid[self._winner_uid] = 1.0
 
         total = sum(weight_by_uid.values())
         if total <= 0:
-            bt.logging.warning("Computed zero total weight; skipping")
+            bt.logging.warning("Computed zero total weight; burning all")
+            self._set_burn_only_weights()
             return
         if abs(total - 1.0) > 1e-9:
             weight_by_uid = {uid: value / total for uid, value in weight_by_uid.items()}
@@ -305,7 +314,7 @@ class Validator:
             bt.logging.warning("set_weights() returned failure")
 
     def _set_burn_only_weights(self) -> None:
-
+        self._winner_uid = None
         bt.logging.info("Setting burn only weights")
         response = self.subtensor.set_weights(
             wallet=self.wallet,
