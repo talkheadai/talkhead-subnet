@@ -232,12 +232,11 @@ class Validator:
         else:
             metrics_list = metrics_payload
 
-        if not isinstance(metrics_list, list) or len(metrics_list) == 0:
-            bt.logging.info("No metrics available; burning all")
-            self._set_burn_only_weights()
-            return
-
         if not keep_latest_weights:
+            if not isinstance(metrics_list, list) or len(metrics_list) == 0:
+                bt.logging.info("No metrics available; burning all")
+                self._set_burn_only_weights()
+                return
             self.do_logging(metrics_list)
             winner = self._pick_winner(metrics_list)
             if winner is None:
@@ -245,6 +244,11 @@ class Validator:
                 self._set_burn_only_weights()
                 return
             winner_hotkey, _ = winner
+
+            self.metagraph.sync(subtensor=self.subtensor)
+            if winner_hotkey not in self.metagraph.hotkeys:
+                bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey}")
+                return
 
             self.metagraph.sync(subtensor=self.subtensor)
             self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
@@ -276,11 +280,6 @@ class Validator:
         except Exception as e:
             bt.logging.warning(f"Failed to parse burn ratio: {e}")
             burn_ratio = 1.0
-
-        self.metagraph.sync(subtensor=self.subtensor)
-        if winner_hotkey not in self.metagraph.hotkeys:
-            bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey}")
-            return
 
         weight_by_uid: dict[int, float] = {
             self._winner_uid: (1.0 - burn_ratio),
