@@ -247,10 +247,10 @@ class Validator:
 
             self.metagraph.sync(subtensor=self.subtensor)
             if winner_hotkey not in self.metagraph.hotkeys:
-                bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey}")
+                bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey} | Burning all")
+                self._set_burn_only_weights()
                 return
 
-            self.metagraph.sync(subtensor=self.subtensor)
             self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
             bt.logging.info(f"🏆 Winner is Miner {self._winner_uid} | {winner_hotkey}")
         
@@ -314,7 +314,7 @@ class Validator:
             bt.logging.warning("set_weights() returned failure")
 
     def _set_burn_only_weights(self) -> None:
-
+        self._winner_uid = None
         bt.logging.info("Setting burn only weights")
         response = self.subtensor.set_weights(
             wallet=self.wallet,
