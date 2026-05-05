@@ -157,15 +157,19 @@ class Validator:
             metrics = row.get("metrics")
             if not isinstance(hotkey, str) or not isinstance(metrics, dict):
                 continue
+            if metrics.get("error") != None:
+                continue
             try:
-                value = float(metrics.get("final_score"))
+                final_score = float(metrics.get("final_score"))
+                if final_score == 0.0:
+                    continue
             except (TypeError, ValueError):
                 continue
-            if not math.isfinite(value):
+            if not math.isfinite(final_score):
                 continue
-            valid.append((hotkey, value))
+            valid.append((hotkey, final_score))
 
-        if not valid:
+        if not valid or len(valid) == 0:
             return None
         return max(valid, key=lambda item: item[1])
 
