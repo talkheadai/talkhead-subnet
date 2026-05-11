@@ -72,6 +72,9 @@ You can also override the image ref from the CLI:
 python -m neurons.miner --image-ref your-registry/your-image@sha256:...
 ```
 
+> [!NOTE]
+> Submissions from the same hotkey must be at least two days apart; submitting again sooner returns HTTP **429** (Too Many Requests) from the subnet API.
+
 ### Run Validator
 
 The validator continuously:
@@ -122,16 +125,16 @@ Evaluation is standardized across miners:
 Validator behavior is split into two loops:
 
 1. **Submission update loop**
-   - Fetch submissions from the subnet API.
-   - Send updated miner image digests to the executor.
-
+  - Fetch submissions from the subnet API.
+  - Send updated miner image digests to the executor.
 2. **Weight setting loop**
-   - Fetch scores from the executor.
-   - Compute weights from score results.
-   - Set weights on chain.
+  - Fetch scores from the executor.
+  - Compute weights from score results.
+  - Set weights on chain.
 
 Winner-take-all policy:
 
 - Highest score wins.
 - Winning miner receives weight.
 - All other miners receive zero.
+
