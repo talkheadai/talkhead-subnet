@@ -73,7 +73,7 @@ python -m neurons.miner --image-ref your-registry/your-image@sha256:...
 ```
 
 > [!NOTE]
-> Submissions from the same hotkey must be at least two days apart; submitting again sooner returns HTTP **429** (Too Many Requests) from the subnet API.
+> Every hotkey, including blacklisted hotkeys, can submit again after four days. Submitting again sooner returns HTTP **429** (Too Many Requests) from the subnet API.
 
 ### Run Validator
 
@@ -121,6 +121,14 @@ Evaluation is standardized across miners:
 - The executor evaluates all miners on the same challenge set.
 - Runs include warmup and scoring phases.
 - Lower latency produces a better score.
+
+Round eligibility and carryover policy:
+
+- Blacklisted submissions and submissions that fail on Docker pull are excluded from the next evaluation round.
+- Each round carries forward only:
+  - The top 5 submissions by `final_score`.
+  - New submissions received for the next round.
+- This keeps evaluation focused on competitive miners while allowing continued re-entry through the 4-day resubmission window.
 
 Validator behavior is split into two loops:
 
