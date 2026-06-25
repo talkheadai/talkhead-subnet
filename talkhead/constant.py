@@ -1,0 +1,2 @@
+NETUID = 108
+BURN_UID = 0

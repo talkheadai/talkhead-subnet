@@ -32,4 +32,4 @@ py-modules = ["config", "utils"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["neurons*"]
+include = ["neurons*", "talkhead*"]

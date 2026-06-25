@@ -1,30 +1,34 @@
 from __future__ import annotations
 
-import bittensor as bt
+import asyncio
 import json
-import logging
 import math
 import os
+import sys
 import time
 from dataclasses import replace
+from pathlib import Path
 from urllib import error, request
 
+import bittensor as bt
 import numpy as np
+import wandb
+from datetime import datetime, timezone
+from dotenv import load_dotenv
 
 from config import AppConfig, config, load_app_config
+from talkhead.protocol import ImageRef
+from talkhead.constant import NETUID
 from utils import __version__
 from utils.sign import signed_subnet_headers
 from utils.logging import maybe_reset_wandb
 from utils.git import check_and_update_code
 
-import wandb
-from datetime import datetime, timezone
-
-from dotenv import load_dotenv
-
 load_dotenv()
 
 INTERVAL_BLOCKS = 180
+MINER_QUERY_BATCH_SIZE = max(1, int(os.getenv("MINER_QUERY_BATCH_SIZE", "16")))
+MINER_QUERY_TIMEOUT = float(os.getenv("MINER_QUERY_TIMEOUT", "12"))
 
 
 def _header_dict(msg: object) -> dict[str, str]:
@@ -78,17 +82,20 @@ def _http_json_with_headers(
 
 
 class Validator:
-    def __init__(self, cfg: AppConfig) -> None:
-
+    def __init__(self, cfg: AppConfig, bt_cfg: bt.Config) -> None:
         self._app_cfg = cfg
-        self.netuid = cfg.netuid
+        self._bt_cfg = bt_cfg
+        self.netuid = bt_cfg.netuid or NETUID
         self.subnet_api_url = cfg.subnet_api_url
         self.executor_url = cfg.executor_url
         if not self.executor_url:
             self.executor_url = self.subnet_api_url
-        self.wallet = bt.Wallet(name=cfg.wallet_name, hotkey=cfg.wallet_hotkey)
-        self.subtensor = bt.Subtensor(network=cfg.network)
-        self.metagraph = bt.Metagraph(netuid=self.netuid, network=cfg.network)
+        self.wallet = bt.Wallet(config=bt_cfg)
+        self.subtensor = bt.Subtensor(config=bt_cfg)
+        self.metagraph = bt.Metagraph(netuid=self.netuid)
+        self.dendrite = bt.Dendrite(wallet=self.wallet)
+        self._query_batch_size = MINER_QUERY_BATCH_SIZE
+        self._query_timeout = MINER_QUERY_TIMEOUT
         if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:
             bt.logging.error(
                 f"Validator is not registered in metagraph: {self.wallet.hotkey.ss58_address}"
@@ -103,7 +110,7 @@ class Validator:
         )
         if self.burn_uid < 0 or self.burn_uid >= len(self.metagraph.hotkeys):
             bt.logging.warning(f"Burn UID out of range: {self.burn_uid}")
-            self.burn_uid = 0
+            self.burn_uid = BURN_UID
         self._winner_uid: int | None = None
         self._metrics_etag: str | None = ""
         self._metrics_cache: list | None = None
@@ -177,19 +184,119 @@ class Validator:
         self.metagraph.sync(subtensor=self.subtensor)
         return self.subtensor.get_current_block()
 
-    def _submission_update_step(self) -> None:
-        status, submissions = _http_json(
-            f"{self.subnet_api_url.rstrip('/')}/submissions",
-            "GET",
-            headers=signed_subnet_headers(self.wallet, "/submissions"),
-        )
-        if status < 200 or status >= 300 or not isinstance(submissions, list):
-            bt.logging.warning(
-                f"Failed to fetch submissions (status={status}): {submissions}"
+    def _serving_miner_targets(self) -> list[tuple[int, bt.AxonInfo]]:
+        """Return (uid, axon) pairs for miners with a reachable axon endpoint."""
+        targets: list[tuple[int, bt.AxonInfo]] = []
+        for uid, axon in enumerate(self.metagraph.axons):
+            if uid == self.uid:
+                continue
+            if not axon.is_serving:
+                # bt.logging.debug(f"Skipping UID {uid}: axon not serving")
+                continue
+            targets.append((uid, axon))
+        return targets
+
+    def _parse_image_ref_response(
+        self,
+        uid: int,
+        axon: bt.AxonInfo,
+        response: object,
+    ) -> dict[str, str] | None:
+        """Validate a single ImageRef response and return an executor submission row."""
+        hotkey = axon.hotkey
+        if not isinstance(response, ImageRef):
+            # bt.logging.warning(f"UID {uid} ({hotkey}): unexpected response type")
+            return None
+
+        if response.is_timeout:
+            # bt.logging.warning(f"UID {uid} ({hotkey}): ImageRef query timed out")
+            return None
+        if response.is_failure:
+            status = (
+                response.dendrite.status_message
+                if response.dendrite is not None
+                else "unknown error"
             )
+            # bt.logging.warning(f"UID {uid} ({hotkey}): ImageRef query failed ({status})")
+            return None
+
+        image_ref = (response.image_ref or "").strip()
+        if "@sha256:" not in image_ref:
+            bt.logging.warning(f"UID {uid} ({hotkey}): missing or invalid image_ref")
+            return None
+
+        bt.logging.debug(f"UID {uid} ({hotkey}): {image_ref}")
+        return {"hotkey": hotkey, "image_ref": image_ref}
+
+    async def collect_miner_digests(self) -> list[dict[str, str]]:
+        """
+        Query miner axons for ``ImageRef`` synapses and collect docker digests.
+
+        Uses the metagraph to discover serving miners, queries axons in batches,
+        and returns rows shaped for the executor ``/update`` endpoint:
+        ``[{"hotkey": "...", "image_ref": "repo@sha256:..."}]``.
+        """
+        self.metagraph.sync(subtensor=self.subtensor)
+        targets = self._serving_miner_targets()
+        if not targets:
+            bt.logging.info("No serving miners found in metagraph")
+            return []
+
+        submissions: list[dict[str, str]] = []
+        batch_count = (len(targets) + self._query_batch_size - 1) // self._query_batch_size
+        bt.logging.info(
+            f"Collecting ImageRef digests from {len(targets)} miners "
+            f"in {batch_count} batch(es)"
+        )
+        
+        for batch_index in range(0, len(targets), self._query_batch_size):
+            batch = targets[batch_index : batch_index + self._query_batch_size]
+            uids = [uid for uid, _ in batch]
+            axons = [axon for _, axon in batch]
+            batch_num = batch_index // self._query_batch_size + 1
+
+            bt.logging.debug(
+                f"ImageRef batch {batch_num}/{batch_count}: querying UIDs {uids}"
+            )
+
+            try:
+                responses = await self.dendrite.forward(
+                    axons=axons,
+                    synapse=ImageRef(),
+                    timeout=self._query_timeout,
+                    deserialize=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                bt.logging.warning(
+                    f"ImageRef batch {batch_num}/{batch_count} failed: {exc}"
+                )
+                continue
+
+            if not isinstance(responses, list):
+                responses = [responses]
+
+            for uid, axon, response in zip(uids, axons, responses):
+                row = self._parse_image_ref_response(uid, axon, response)
+                if row is not None:
+                    submissions.append(row)
+
+        bt.logging.info(
+            f"Collected {len(submissions)} digests from {len(targets)} serving miners"
+        )
+        return submissions
+
+    def _submission_update_step(self) -> None:
+        """
+        Loop 1: query miners directly for ImageRef digests and forward them to the executor.
+        """
+        try:
+            submissions = asyncio.run(self.collect_miner_digests())
+        except Exception as exc:  # noqa: BLE001
+            bt.logging.warning(f"collect_miner_digests error: {exc}")
             return
+
         if len(submissions) == 0:
-            bt.logging.info("No submissions received; skipping update")
+            bt.logging.info("No miner digests collected; skipping executor update")
             return
 
         exec_status, exec_response = _http_json(
@@ -208,6 +315,9 @@ class Validator:
             )
 
     def _weight_setting_step(self) -> None:
+        """
+        Loop 2: read executor metrics and set on-chain weights.
+        """
         keep_latest_weights = False
         req_headers = dict(signed_subnet_headers(self.wallet, "/metrics"))
         if self._metrics_etag:
@@ -383,7 +493,7 @@ class Validator:
                     time.sleep(12 * 10) # Wating for 10 blocks
                     continue
                 
-                if self.subtensor.network != "test":
+                if self.subtensor.network != "test" and self.netuid == NETUID:
                     check_and_update_code()
 
                 try:
@@ -405,8 +515,9 @@ class Validator:
 
 
 def main() -> None:
-    cfg = load_app_config(config())
-    Validator(cfg).run()
+    bt_cfg = config()
+    app_cfg = load_app_config(bt_cfg)
+    Validator(app_cfg, bt_cfg).run()
 
 
 if __name__ == "__main__":

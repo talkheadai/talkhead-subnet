@@ -28,10 +28,6 @@ class AppConfig:
     image_ref: str = ""
     subnet_api_url: str = "https://subnet.talkhead.ai"
     executor_url: str = "http://localhost:9000"
-    wallet_name: str = "default"
-    wallet_hotkey: str = "default"
-    network: str = "finney"
-    netuid: int = 108
     full_path: str = ""
     wandb: WandbConfig = field(default_factory=WandbConfig)
     signature: str = ""
@@ -144,24 +140,12 @@ def load_config(
         image_ref=img,
         subnet_api_url=subnet_api_url,
         executor_url=_executor_url_from_env(subnet_api_url),
-        wallet_name=str(os.getenv("WALLET_NAME", "default")),
-        wallet_hotkey=str(os.getenv("HOTKEY_NAME", "default")),
-        network=str(os.getenv("NETWORK", "finney")),
-        netuid=_as_int(os.getenv("NETUID", "108"), 108),
         wandb=WandbConfig(),
     )
 
     overrides: dict[str, Any] = {}
     if image_ref is not None:
         overrides["image_ref"] = str(image_ref)
-    if wallet_name is not None:
-        overrides["wallet_name"] = str(wallet_name)
-    if wallet_hotkey is not None:
-        overrides["wallet_hotkey"] = str(wallet_hotkey)
-    if network is not None:
-        overrides["network"] = str(network)
-    if netuid is not None:
-        overrides["netuid"] = int(netuid)
 
     cfg = replace(cfg, **overrides)
 
