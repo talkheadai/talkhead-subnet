@@ -26,11 +26,7 @@ class WandbConfig:
 @dataclass
 class AppConfig:
     image_ref: str = ""
-    subnet_api_url: str = "https://subnet.talkhead.ai"
-    executor_url: str = "http://localhost:9000"
-    full_path: str = ""
     wandb: WandbConfig = field(default_factory=WandbConfig)
-    signature: str = ""
 
 
 def _as_int(value: Any, default: int) -> int:
@@ -38,13 +34,6 @@ def _as_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
-
-
-def _executor_url_from_env(subnet_api_url: str) -> str:
-    raw = os.getenv("EXECUTOR_API_URL")
-    if raw is None or str(raw).strip() == "":
-        return subnet_api_url
-    return str(raw)
 
 
 def add_args(parser: argparse.ArgumentParser) -> None:
@@ -132,14 +121,10 @@ def load_config(
     wandb_offline: bool | None = None,
     signature: str | None = None,
 ) -> AppConfig:
-    subnet_api_url = str(os.getenv("SUBNET_API_URL", "https://subnet.talkhead.ai"))
-
     img = str(os.getenv("IMAGE_REF", ""))
 
     cfg = AppConfig(
         image_ref=img,
-        subnet_api_url=subnet_api_url,
-        executor_url=_executor_url_from_env(subnet_api_url),
         wandb=WandbConfig(),
     )
 
@@ -163,8 +148,6 @@ def load_config(
     if wandb_overrides:
         cfg = replace(cfg, wandb=replace(cfg.wandb, **wandb_overrides))
 
-    if not cfg.executor_url.strip():
-        cfg = replace(cfg, executor_url=cfg.subnet_api_url)
     return cfg
 
 

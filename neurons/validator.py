@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 from config import AppConfig, config, load_app_config
 from talkhead.protocol import ImageRef
-from talkhead.constant import NETUID
+from talkhead.constant import NETUID, BURN_UID, BURN_RATIO
 from utils import __version__
 from utils.sign import signed_subnet_headers
 from utils.logging import maybe_reset_wandb
@@ -31,65 +31,12 @@ MINER_QUERY_BATCH_SIZE = max(1, int(os.getenv("MINER_QUERY_BATCH_SIZE", "16")))
 MINER_QUERY_TIMEOUT = float(os.getenv("MINER_QUERY_TIMEOUT", "12"))
 
 
-def _header_dict(msg: object) -> dict[str, str]:
-    return {k.lower(): v for k, v in msg.items()}
-
-
-def _http_json(
-    url: str,
-    method: str,
-    body: object | None = None,
-    headers: dict[str, str] | None = None,
-    timeout: int = 30,
-) -> tuple[int, object]:
-    status, payload, _hdrs = _http_json_with_headers(
-        url, method, body=body, headers=headers, timeout=timeout
-    )
-    return status, payload
-
-
-def _http_json_with_headers(
-    url: str,
-    method: str,
-    body: object | None = None,
-    headers: dict[str, str] | None = None,
-    timeout: int = 30,
-) -> tuple[int, object, dict[str, str]]:
-    payload = None
-    if body is not None:
-        payload = json.dumps(body).encode("utf-8")
-    req = request.Request(url, data=payload, method=method)
-    req.add_header("Content-Type", "application/json")
-    for key, value in (headers or {}).items():
-        req.add_header(key, value)
-
-    try:
-        with request.urlopen(req, timeout=timeout) as response:
-            raw = response.read().decode("utf-8")
-            hdrs = _header_dict(response.headers)
-            return response.status, json.loads(raw) if raw else None, hdrs
-    except error.HTTPError as http_err:
-        hdrs = _header_dict(http_err.headers)
-        raw = http_err.read().decode("utf-8")
-        if http_err.code == 304:
-            return 304, None, hdrs
-        try:
-            return http_err.code, json.loads(raw) if raw else None, hdrs
-        except json.JSONDecodeError:
-            return http_err.code, raw, hdrs
-    except Exception as exc:  # noqa: BLE001
-        return 0, str(exc), {}
-
 
 class Validator:
     def __init__(self, cfg: AppConfig, bt_cfg: bt.Config) -> None:
         self._app_cfg = cfg
         self._bt_cfg = bt_cfg
         self.netuid = bt_cfg.netuid or NETUID
-        self.subnet_api_url = cfg.subnet_api_url
-        self.executor_url = cfg.executor_url
-        if not self.executor_url:
-            self.executor_url = self.subnet_api_url
         self.wallet = bt.Wallet(config=bt_cfg)
         self.subtensor = bt.Subtensor(config=bt_cfg)
         self.metagraph = bt.Metagraph(netuid=self.netuid)
@@ -100,7 +47,7 @@ class Validator:
             bt.logging.error(
                 f"Validator is not registered in metagraph: {self.wallet.hotkey.ss58_address}"
             )
-            exit()
+            sys.exit(1)
             
         self.config = replace(cfg, full_path=os.getcwd())
         # Each miner gets a unique identity (UID) in the network for differentiation.
@@ -295,109 +242,45 @@ class Validator:
             bt.logging.warning(f"collect_miner_digests error: {exc}")
             return
 
-        if len(submissions) == 0:
-            bt.logging.info("No miner digests collected; skipping executor update")
-            return
 
-        exec_status, exec_response = _http_json(
-            f"{self.executor_url.rstrip('/')}/update",
-            "POST",
-            headers=signed_subnet_headers(self.wallet, "/update"),
-            body=submissions,
-        )
-        if not (200 <= exec_status < 300):
-            bt.logging.warning(
-                f"Executor update failed (status={exec_status}): {exec_response}"
-            )
-        else:
-            bt.logging.debug(
-                f"Executor update successful (status={exec_status}): {exec_response}"
-            )
 
     def _weight_setting_step(self) -> None:
         """
         Loop 2: read executor metrics and set on-chain weights.
         """
-        keep_latest_weights = False
-        req_headers = dict(signed_subnet_headers(self.wallet, "/metrics"))
-        if self._metrics_etag:
-            req_headers["If-None-Match"] = self._metrics_etag
-
-        metric_status, metrics_payload, resp_headers = _http_json_with_headers(
-            f"{self.executor_url.rstrip('/')}/metrics",
-            "GET",
-            headers=req_headers,
-        )
-
-        if metric_status == 304:
-            if self._metrics_cache is None:
-                bt.logging.warning(
-                    "Metrics 304 Not Modified but no cached rows; burning all"
-                )
-                self._set_burn_only_weights()
-                return
-            bt.logging.warning("Metrics unchanged (304); keep the latest weights")
-            keep_latest_weights = True
-        elif 200 <= metric_status < 300:
-            self._metrics_etag = resp_headers.get("etag") or None
-            metrics_list = metrics_payload
-            if isinstance(metrics_list, list):
-                self._metrics_cache = metrics_list
-        else:
-            metrics_list = metrics_payload
-
-        if not keep_latest_weights:
-            if not isinstance(metrics_list, list) or len(metrics_list) == 0:
-                bt.logging.info("No metrics available; burning all")
-                self._set_burn_only_weights()
-                return
-            self.do_logging(metrics_list)
-            winner = self._pick_winner(metrics_list)
-            if winner is None:
-                bt.logging.warning("All metrics invalid; burning all")
-                self._set_burn_only_weights()
-                return
-            winner_hotkey, _ = winner
-
-            self.metagraph.sync(subtensor=self.subtensor)
-            if winner_hotkey not in self.metagraph.hotkeys:
-                bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey} | Burning all")
-                self._set_burn_only_weights()
-                return
-
-            self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
-            bt.logging.info(f"🏆 Winner is Miner {self._winner_uid} | {winner_hotkey}")
         
+        return
+        metrics_list = self.get_metrics()
+
+        if not isinstance(metrics_list, list) or len(metrics_list) == 0:
+            bt.logging.info("No metrics available; burning all")
+            self._set_burn_only_weights()
+            return
+        self.do_logging(metrics_list)
+        winner = self._pick_winner(metrics_list)
+        if winner is None:
+            bt.logging.warning("All metrics invalid; burning all")
+            self._set_burn_only_weights()
+            return
+        winner_hotkey, _ = winner
+
+        self.metagraph.sync(subtensor=self.subtensor)
+        if winner_hotkey not in self.metagraph.hotkeys:
+            bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey} | Burning all")
+            self._set_burn_only_weights()
+            return
+
+        self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
+        bt.logging.info(f"🏆 Winner is Miner {self._winner_uid} | {winner_hotkey}")
+    
         if self._winner_uid is None:
             bt.logging.warning("No winner found; burning all")
             self._set_burn_only_weights()
             return
             
-        burn_ratio = 1.0
-        burn_status, burn_response = _http_json(
-            f"{self.subnet_api_url.rstrip('/')}/burn_ratio",
-            "GET",
-            headers=signed_subnet_headers(self.wallet, "/burn_ratio"),
-        )
-        if (
-            burn_status < 200
-            or burn_status >= 300
-            or not isinstance(burn_response, dict)
-        ):
-            bt.logging.warning(
-                f"Failed to fetch burn ratio (status={burn_status}): {burn_response}"
-            )
-
-        try:
-            burn_ratio_value = burn_response.get("burn_ratio")
-            burn_ratio = max(0.0, min(1.0, float(burn_ratio_value)))
-        except Exception as e:
-            bt.logging.warning(f"Failed to parse burn ratio: {e}")
-            burn_ratio = 1.0
-
         weight_by_uid: dict[int, float] = {
-            self._winner_uid: (1.0 - burn_ratio),
-            self.burn_uid: burn_ratio,
+            self._winner_uid: (1.0 - BURN_RATIO),
+            self.burn_uid: BURN_RATIO,
         }
         if self._winner_uid == self.burn_uid:
             weight_by_uid[self._winner_uid] = 1.0

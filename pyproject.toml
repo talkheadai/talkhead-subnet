@@ -15,11 +15,15 @@ authors = [
 dependencies = [
     "bittensor==10.2.0",
     "python-dotenv==1.2.2",
-    "wandb==0.19.0",
     "async-substrate-interface==1.6.4",
 ]
 
 [project.optional-dependencies]
+miner = []
+validator = [
+    "wandb==0.19.0",
+    "numpy",
+]
 dev = ["pytest==9.0.1"]
 
 [project.urls]
