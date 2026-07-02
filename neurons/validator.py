@@ -1,15 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import math
 import os
 import sys
 import time
-from dataclasses import replace
-from pathlib import Path
-from urllib import error, request
-
 import bittensor as bt
 import numpy as np
 import wandb
@@ -17,10 +12,12 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from config import AppConfig, config, load_app_config
+from executor.loop import EvaluationLoop
+from executor.models import MinerSubmission
+from executor.state import MinerState
 from talkhead.protocol import ImageRef
 from talkhead.constant import NETUID, BURN_UID, BURN_RATIO
 from utils import __version__
-from utils.sign import signed_subnet_headers
 from utils.logging import maybe_reset_wandb
 from utils.git import check_and_update_code
 
@@ -29,7 +26,7 @@ load_dotenv()
 INTERVAL_BLOCKS = 180
 MINER_QUERY_BATCH_SIZE = max(1, int(os.getenv("MINER_QUERY_BATCH_SIZE", "16")))
 MINER_QUERY_TIMEOUT = float(os.getenv("MINER_QUERY_TIMEOUT", "12"))
-
+STATE_FILE = os.getenv("STATE_FILE", "./state.db")
 
 
 class Validator:
@@ -48,9 +45,8 @@ class Validator:
                 f"Validator is not registered in metagraph: {self.wallet.hotkey.ss58_address}"
             )
             sys.exit(1)
-            
-        self.config = replace(cfg, full_path=os.getcwd())
-        # Each miner gets a unique identity (UID) in the network for differentiation.
+
+        self.config = cfg
         self.uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
         self.burn_uid = self.metagraph.hotkeys.index(
             self.subtensor.subnet(netuid=self.netuid).owner_hotkey
@@ -60,7 +56,13 @@ class Validator:
             self.burn_uid = BURN_UID
         self._winner_uid: int | None = None
         self._metrics_etag: str | None = ""
-        self._metrics_cache: list | None = None
+        self._metrics_cache: list[dict] | None = None
+
+        self._miner_state = MinerState(state_file=STATE_FILE)
+        self._eval_loop = EvaluationLoop(state=self._miner_state)
+        self._eval_loop.start()
+        bt.logging.info("Started in-process evaluation loop")
+
         self.init_wandb()
 
     def init_wandb(self) -> None:
@@ -74,30 +76,23 @@ class Validator:
             else self.config.wandb.testnet_project_name
         )
 
-        # Initialize the wandb run for the single project
         bt.logging.info(
             f"Initializing W&B run for '{self.config.wandb.entity}/{wandb_project}'"
         )
         try:
-            run_id = wandb.init(
+            wandb.init(
                 name=run_name,
                 project=wandb_project,
                 entity=self.config.wandb.entity or None,
                 config=self.config,
-                dir=self.config.full_path or None,
                 mode="offline" if self.config.wandb.offline else None,
-            ).id
+            )
         except Exception as e:
             bt.logging.error(f"Failed to initialize W&B run: {e}")
             self.config.wandb.off = True
             return
 
         self._wandb_start_date = datetime.now(timezone.utc).date()
-
-        # Sign the run to ensure it's from the correct hotkey
-        signature = self.wallet.hotkey.sign(run_id.encode()).hex()
-        self.config.signature = signature
-        wandb.config.update(self.config, allow_val_change=True)
 
         bt.logging.success(f"Started wandb run {run_name}")
 
@@ -111,7 +106,7 @@ class Validator:
             metrics = row.get("metrics")
             if not isinstance(hotkey, str) or not isinstance(metrics, dict):
                 continue
-            if metrics.get("error") != None:
+            if metrics.get("error") is not None:
                 continue
             try:
                 final_score = float(metrics.get("final_score"))
@@ -123,7 +118,7 @@ class Validator:
                 continue
             valid.append((hotkey, final_score))
 
-        if not valid or len(valid) == 0:
+        if not valid:
             return None
         return max(valid, key=lambda item: item[1])
 
@@ -132,13 +127,11 @@ class Validator:
         return self.subtensor.get_current_block()
 
     def _serving_miner_targets(self) -> list[tuple[int, bt.AxonInfo]]:
-        """Return (uid, axon) pairs for miners with a reachable axon endpoint."""
         targets: list[tuple[int, bt.AxonInfo]] = []
         for uid, axon in enumerate(self.metagraph.axons):
             if uid == self.uid:
                 continue
             if not axon.is_serving:
-                # bt.logging.debug(f"Skipping UID {uid}: axon not serving")
                 continue
             targets.append((uid, axon))
         return targets
@@ -149,22 +142,13 @@ class Validator:
         axon: bt.AxonInfo,
         response: object,
     ) -> dict[str, str] | None:
-        """Validate a single ImageRef response and return an executor submission row."""
         hotkey = axon.hotkey
         if not isinstance(response, ImageRef):
-            # bt.logging.warning(f"UID {uid} ({hotkey}): unexpected response type")
             return None
 
         if response.is_timeout:
-            # bt.logging.warning(f"UID {uid} ({hotkey}): ImageRef query timed out")
             return None
         if response.is_failure:
-            status = (
-                response.dendrite.status_message
-                if response.dendrite is not None
-                else "unknown error"
-            )
-            # bt.logging.warning(f"UID {uid} ({hotkey}): ImageRef query failed ({status})")
             return None
 
         image_ref = (response.image_ref or "").strip()
@@ -176,13 +160,6 @@ class Validator:
         return {"hotkey": hotkey, "image_ref": image_ref}
 
     async def collect_miner_digests(self) -> list[dict[str, str]]:
-        """
-        Query miner axons for ``ImageRef`` synapses and collect docker digests.
-
-        Uses the metagraph to discover serving miners, queries axons in batches,
-        and returns rows shaped for the executor ``/update`` endpoint:
-        ``[{"hotkey": "...", "image_ref": "repo@sha256:..."}]``.
-        """
         self.metagraph.sync(subtensor=self.subtensor)
         targets = self._serving_miner_targets()
         if not targets:
@@ -195,7 +172,7 @@ class Validator:
             f"Collecting ImageRef digests from {len(targets)} miners "
             f"in {batch_count} batch(es)"
         )
-        
+
         for batch_index in range(0, len(targets), self._query_batch_size):
             batch = targets[batch_index : batch_index + self._query_batch_size]
             uids = [uid for uid, _ in batch]
@@ -233,51 +210,73 @@ class Validator:
         return submissions
 
     def _submission_update_step(self) -> None:
-        """
-        Loop 1: query miners directly for ImageRef digests and forward them to the executor.
-        """
         try:
             submissions = asyncio.run(self.collect_miner_digests())
         except Exception as exc:  # noqa: BLE001
             bt.logging.warning(f"collect_miner_digests error: {exc}")
             return
 
+        if not submissions:
+            bt.logging.info("No miner digests collected; skipping executor update")
+            return
 
+        self._miner_state.upsert_submissions(
+            [
+                MinerSubmission(hotkey=row["hotkey"], image_ref=row["image_ref"])
+                for row in submissions
+            ]
+        )
+        bt.logging.info(f"Updated {len(submissions)} miner submissions in executor state")
 
     def _weight_setting_step(self) -> None:
-        """
-        Loop 2: read executor metrics and set on-chain weights.
-        """
-        
-        return
-        metrics_list = self.get_metrics()
+        keep_latest_weights = False
+        metrics_rows, etag = self._miner_state.list_metrics_with_etag()
 
-        if not isinstance(metrics_list, list) or len(metrics_list) == 0:
-            bt.logging.info("No metrics available; burning all")
-            self._set_burn_only_weights()
-            return
-        self.do_logging(metrics_list)
-        winner = self._pick_winner(metrics_list)
-        if winner is None:
-            bt.logging.warning("All metrics invalid; burning all")
-            self._set_burn_only_weights()
-            return
-        winner_hotkey, _ = winner
+        if self._metrics_etag and etag == self._metrics_etag:
+            if self._metrics_cache is None:
+                bt.logging.warning(
+                    "Metrics unchanged but no cached rows; burning all"
+                )
+                self._set_burn_only_weights()
+                return
+            bt.logging.info("Metrics unchanged; keeping latest weights")
+            keep_latest_weights = True
+        else:
+            self._metrics_etag = etag
+            metrics_list = [row.model_dump() for row in metrics_rows]
+            if isinstance(metrics_list, list):
+                self._metrics_cache = metrics_list
 
-        self.metagraph.sync(subtensor=self.subtensor)
-        if winner_hotkey not in self.metagraph.hotkeys:
-            bt.logging.warning(f"Winner hotkey not found in metagraph: {winner_hotkey} | Burning all")
-            self._set_burn_only_weights()
-            return
+        if not keep_latest_weights:
+            metrics_list = [row.model_dump() for row in metrics_rows]
+            if not isinstance(metrics_list, list) or len(metrics_list) == 0:
+                bt.logging.info("No metrics available; burning all")
+                self._set_burn_only_weights()
+                return
+            self.do_logging(metrics_list)
+            winner = self._pick_winner(metrics_list)
+            if winner is None:
+                bt.logging.warning("All metrics invalid; burning all")
+                self._set_burn_only_weights()
+                return
+            winner_hotkey, _ = winner
 
-        self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
-        bt.logging.info(f"🏆 Winner is Miner {self._winner_uid} | {winner_hotkey}")
-    
+            self.metagraph.sync(subtensor=self.subtensor)
+            if winner_hotkey not in self.metagraph.hotkeys:
+                bt.logging.warning(
+                    f"Winner hotkey not found in metagraph: {winner_hotkey} | Burning all"
+                )
+                self._set_burn_only_weights()
+                return
+
+            self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
+            bt.logging.info(f"Winner is Miner {self._winner_uid} | {winner_hotkey}")
+
         if self._winner_uid is None:
             bt.logging.warning("No winner found; burning all")
             self._set_burn_only_weights()
             return
-            
+
         weight_by_uid: dict[int, float] = {
             self._winner_uid: (1.0 - BURN_RATIO),
             self.burn_uid: BURN_RATIO,
@@ -307,7 +306,7 @@ class Validator:
             wait_for_inclusion=True,
             wait_for_finalization=False,
         )
-        if response.success != True:
+        if response.success is not True:
             bt.logging.warning("set_weights() returned failure")
 
     def _set_burn_only_weights(self) -> None:
@@ -321,13 +320,10 @@ class Validator:
             wait_for_inclusion=True,
             wait_for_finalization=False,
         )
-        if response.success != True:
+        if response.success is not True:
             bt.logging.warning("set_weights() returned failure")
 
-    def do_logging(
-        self,
-        metrics_list: list[dict],
-    ):
+    def do_logging(self, metrics_list: list[dict]) -> None:
         for metric in metrics_list:
             hotkey = metric.get("hotkey")
             try:
@@ -346,12 +342,16 @@ class Validator:
                     final_score = round(metrics.get("final_score", 0.0), 2)
                     quality_score = round(metrics.get("quality_score", 0.0), 2)
                     peak_vram_gb = round(efficiency.get("peak_vram_gb", 0.0), 2)
-                    inference_time_sec = round(efficiency.get("inference_time_sec", 0.0), 2)
+                    inference_time_sec = round(
+                        efficiency.get("inference_time_sec", 0.0), 2
+                    )
                 except Exception as e:
                     bt.logging.warning(f"Failed to parse metrics for hotkey {hotkey}: {e}")
                     continue
                 bt.logging.info(
-                    f"Metrics for Miner {uid} | {hotkey}: Final Score {final_score} | Quality Score {quality_score} | Peak VRAM {peak_vram_gb} | Inference Time {inference_time_sec}"
+                    f"Metrics for Miner {uid} | {hotkey}: Final Score {final_score} | "
+                    f"Quality Score {quality_score} | Peak VRAM {peak_vram_gb} | "
+                    f"Inference Time {inference_time_sec}"
                 )
                 if not self.config.wandb.off:
                     wandb.log(
@@ -372,10 +372,10 @@ class Validator:
                     last_cycle_block >= 0
                     and current_block - last_cycle_block < INTERVAL_BLOCKS
                 ):
-                    bt.logging.debug(f"Validator is running...")
-                    time.sleep(12 * 10) # Wating for 10 blocks
+                    bt.logging.debug("Validator is running...")
+                    time.sleep(12 * 10)
                     continue
-                
+
                 if self.subtensor.network != "test" and self.netuid == NETUID:
                     check_and_update_code()
 
@@ -390,11 +390,11 @@ class Validator:
                     bt.logging.warning(f"weight_setting_step error: {exc}")
 
                 last_cycle_block = current_block
-
-                # prevent W&B logs from becoming massive
                 maybe_reset_wandb(self)
         except KeyboardInterrupt:
             bt.logging.info("Validator stopped by user")
+        finally:
+            self._eval_loop.stop()
 
 
 def main() -> None:

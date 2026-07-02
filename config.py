@@ -110,16 +110,11 @@ def config(args: list[str] | None = None) -> Any:
 def load_config(
     *,
     image_ref: str | None = None,
-    wallet_name: str | None = None,
-    wallet_hotkey: str | None = None,
-    network: str | None = None,
-    netuid: int | None = None,
     wandb_project_name: str | None = None,
     wandb_testnet_project_name: str | None = None,
     wandb_entity: str | None = None,
     wandb_off: bool | None = None,
     wandb_offline: bool | None = None,
-    signature: str | None = None,
 ) -> AppConfig:
     img = str(os.getenv("IMAGE_REF", ""))
 
@@ -164,18 +159,6 @@ def load_app_config(bt_cfg: Any) -> AppConfig:
     return load_config(
         image_ref=getattr(bt_cfg, "image_ref", None)
         if _bt_cli_was_set(bt_cfg, "image_ref")
-        else None,
-        wallet_name=bt_cfg.wallet.name
-        if _bt_cli_was_set(bt_cfg, "wallet.name")
-        else None,
-        wallet_hotkey=bt_cfg.wallet.hotkey
-        if _bt_cli_was_set(bt_cfg, "wallet.hotkey")
-        else None,
-        network=bt_cfg.subtensor.network
-        if _bt_cli_was_set(bt_cfg, "subtensor.network")
-        else None,
-        netuid=getattr(bt_cfg, "netuid", None)
-        if _bt_cli_was_set(bt_cfg, "netuid")
         else None,
         wandb_project_name=str(
             getattr(bt_cfg, "wandb_project_name", WANDB_PROJECT_NAME_DEFAULT)

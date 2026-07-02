@@ -34,3 +34,7 @@ Thumbs.db
 
 
 wandb/
+
+*.db*
+
+tests/
