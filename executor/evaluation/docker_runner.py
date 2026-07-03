@@ -76,7 +76,7 @@ def _upload_video_to_r2(video_path: Path, challenge: Challenge) -> str | None:
         video_b64 = base64.b64encode(video_path.read_bytes()).decode("ascii")
         return upload_video_base64_to_r2(
             video_b64,
-            prompt=challenge.text or challenge.challenge_id,
+            prompt=challenge.challenge_id,
         )
     except Exception as exc:
         logger.warning(
@@ -213,7 +213,6 @@ def _load_challenges(challenges_dir: str) -> list[Challenge]:
         challenges.append(
             Challenge(
                 challenge_id=challenge_dir.name,
-                text="",
                 face_bytes=face_path.read_bytes(),
                 audio_bytes=audio_path.read_bytes(),
             )
@@ -228,8 +227,8 @@ def pull_image(image_ref: str, timeout_sec: int = PULL_IMAGE_TIMEOUT_SEC) -> boo
                 ["docker", "pull", image_ref],
                 check=True,
                 timeout=timeout_sec,
-                capture_output=False,
-                text=False,
+                capture_output=True,
+                text=True,
             )
             if attempt > 1:
                 logger.info(
@@ -342,11 +341,35 @@ def stop_all_running_containers() -> None:
         stop_container(cid)
 
 
-def remove_all_images() -> None:
+def _run_docker_prune(args: list[str], *, label: str) -> None:
     try:
-        subprocess.run(["docker", "image", "prune", "-a", "-f"], check=False)
+        res = subprocess.run(
+            ["docker", *args],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        reclaimed = (res.stdout or "").strip()
+        if reclaimed:
+            logger.debug(f"docker {label}: {reclaimed}")
+        if res.returncode != 0:
+            stderr = (res.stderr or "").strip()
+            logger.warning(
+                f"docker {label} failed rc={res.returncode} "
+                f"stderr={stderr[:300] or 'empty'}"
+            )
     except Exception as exc:
-        logger.warning(f"failed to prune docker images: {exc}")
+        logger.warning(f"docker {label} failed: {exc}")
+
+
+def cleanup_docker_resources() -> None:
+    """Reclaim disk from evaluation images, stopped containers, and build cache."""
+    _run_docker_prune(
+        ["container", "prune", "-f", "--filter", f"label={EVALUATION_CONTAINER_LABEL}"],
+        label="container prune",
+    )
+    _run_docker_prune(["system", "prune", "-a", "-f"], label="system prune")
+    _run_docker_prune(["builder", "prune", "-a", "-f"], label="builder prune")
 
 
 def _send_challenge(
@@ -376,7 +399,6 @@ def _send_challenge(
 
     task_payload = {
         "challenge_id": challenge.challenge_id,
-        "text": challenge.text,
         "seed": 123,
         "fps": 25,
         "resolution": 512,
@@ -520,7 +542,6 @@ def evaluate(image_ref: str, challenges: list[Challenge]) -> tuple[float, dict]:
                             video_path=str(output_video),
                             reference_image_path=str(face_tmp),
                             audio_path=str(audio_tmp),
-                            expected_transcript=challenge.text or None,
                             peak_vram_gb=result.peak_vram_gb,
                             inference_time_sec=result.inference_time_sec,
                             efficiency_config=eff_cfg,
@@ -619,7 +640,7 @@ def evaluate(image_ref: str, challenges: list[Challenge]) -> tuple[float, dict]:
         if container_id:
             stop_container(container_id)
         shutil.rmtree(job_dir, ignore_errors=True)
-        remove_all_images()
+        cleanup_docker_resources()
 
     failures = [r for r in warmup_results + scoring_results if not r.success]
     if failures:

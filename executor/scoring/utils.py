@@ -73,6 +73,13 @@ def cached_model(name: str, builder: Any) -> Any:
     return model
 
 
+@contextlib.contextmanager
+def suppress_stdio() -> Any:
+    with open(os.devnull, "w") as devnull:
+        with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+            yield
+
+
 def cosine_similarity(a: Any, b: Any) -> float:
     if np is None:
         return 0.0

@@ -9,7 +9,6 @@ from pydantic import BaseModel
 @dataclass(frozen=True)
 class Challenge:
     challenge_id: str
-    text: str
     audio_bytes: bytes
     face_bytes: bytes
 

@@ -36,6 +36,8 @@ validator = [
     "insightface>=0.7.3",
     "onnxruntime>=1.18",
     "openai-whisper>=20231117",
+    "datasets>=2.19",
+    "huggingface_hub>=0.24",
     "boto3>=1.37.20",
 ]
 dev = ["pytest==9.0.1"]

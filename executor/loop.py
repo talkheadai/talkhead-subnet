@@ -114,5 +114,5 @@ class EvaluationLoop:
             logger.info(f"loaded {len(challenges)} challenges from {challenges_dir}")
             return challenges
         challenges = self._challenge_loader.load()
-        logger.info(f"loaded {len(challenges)} challenges from APIs")
+        logger.info(f"loaded {len(challenges)} challenges")
         return challenges

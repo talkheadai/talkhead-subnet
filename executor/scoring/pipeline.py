@@ -39,7 +39,7 @@ def score_video(
     video_path: str,
     reference_image_path: str,
     audio_path: str,
-    expected_transcript: Optional[str],
+    expected_transcript: Optional[str] = None,
     *,
     peak_vram_gb: float | None = None,
     inference_time_sec: float | None = None,

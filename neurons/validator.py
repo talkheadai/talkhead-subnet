@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import math
 import os
 import sys
@@ -12,6 +11,8 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 from config import AppConfig, config, load_app_config
+from executor.challenges.celebahq import ensure_celebahq_dataset
+from executor.challenges.librispeech import ensure_librispeech_dataset
 from executor.loop import EvaluationLoop
 from executor.models import MinerSubmission
 from executor.state import MinerState
@@ -59,6 +60,9 @@ class Validator:
         self._metrics_cache: list[dict] | None = None
 
         self._miner_state = MinerState(state_file=STATE_FILE)
+        if not os.getenv("CHALLENGES_DIR", "").strip():
+            ensure_celebahq_dataset()
+            ensure_librispeech_dataset()
         self._eval_loop = EvaluationLoop(state=self._miner_state)
         self._eval_loop.start()
         bt.logging.info("Started in-process evaluation loop")
@@ -159,7 +163,7 @@ class Validator:
         bt.logging.debug(f"UID {uid} ({hotkey}): {image_ref}")
         return {"hotkey": hotkey, "image_ref": image_ref}
 
-    async def collect_miner_digests(self) -> list[dict[str, str]]:
+    def collect_miner_digests(self) -> list[dict[str, str]]:
         self.metagraph.sync(subtensor=self.subtensor)
         targets = self._serving_miner_targets()
         if not targets:
@@ -184,7 +188,7 @@ class Validator:
             )
 
             try:
-                responses = await self.dendrite.forward(
+                responses = self.dendrite.query(
                     axons=axons,
                     synapse=ImageRef(),
                     timeout=self._query_timeout,
@@ -211,7 +215,7 @@ class Validator:
 
     def _submission_update_step(self) -> None:
         try:
-            submissions = asyncio.run(self.collect_miner_digests())
+            submissions = self.collect_miner_digests()
         except Exception as exc:  # noqa: BLE001
             bt.logging.warning(f"collect_miner_digests error: {exc}")
             return

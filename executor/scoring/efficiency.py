@@ -15,7 +15,7 @@ is 0.0 so quality-only scoring remains backward compatible.
 from __future__ import annotations
 
 MAX_VRAM_GB = 10
-MAX_INFERENCE_TIME_SEC = 30
+MAX_INFERENCE_TIME_SEC = 60
 CAP_PENALTY_SCORE = 0.01
 TIME_REF_SEC = 30
 VRAM_REF_GB = 8

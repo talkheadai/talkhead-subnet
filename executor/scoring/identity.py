@@ -11,6 +11,7 @@ from executor.scoring.utils import (
     cosine_similarity,
     percentile,
     read_image,
+    suppress_stdio,
 )
 
 try:
@@ -24,12 +25,13 @@ _INSIGHTFACE_INIT_LOGGED = False
 def _build_insightface() -> Any:
     import insightface  # type: ignore
 
-    app = insightface.app.FaceAnalysis(name="buffalo_l")
-    # Prefer GPU, but gracefully fall back to CPU so identity mode remains robust.
-    try:
-        app.prepare(ctx_id=0)
-    except Exception:
-        app.prepare(ctx_id=-1)
+    with suppress_stdio():
+        app = insightface.app.FaceAnalysis(name="buffalo_l")
+        # Prefer GPU, but gracefully fall back to CPU so identity mode remains robust.
+        try:
+            app.prepare(ctx_id=0)
+        except Exception:
+            app.prepare(ctx_id=-1)
     return app
 
 
