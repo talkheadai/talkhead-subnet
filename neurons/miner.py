@@ -10,6 +10,8 @@ from config import config, load_app_config
 from talkhead.protocol import ImageRef
 from talkhead.constant import NETUID
 
+MIN_ALPHA_STAKE = 10_000
+
 
 def _resolve_image_ref(cli_image_ref: str | None, cfg_image_ref: str) -> str:
     if cli_image_ref is not None and cli_image_ref.strip():
@@ -36,6 +38,19 @@ class TalkHeadMiner:
     def blacklist(self, synapse: ImageRef) -> Tuple[bool, str]:
         if synapse.dendrite is None or not synapse.dendrite.hotkey:
             return True, "Missing dendrite hotkey"
+
+        hotkey = synapse.dendrite.hotkey
+        try:
+            uid = self.metagraph.hotkeys.index(hotkey)
+        except ValueError:
+            return True, f"Unregistered hotkey: {hotkey}"
+
+        alpha_stake = float(self.metagraph.alpha_stake[uid])
+        if alpha_stake < MIN_ALPHA_STAKE:
+            return True, (
+                f"Alpha stake {alpha_stake:.4g} below minimum {MIN_ALPHA_STAKE}"
+            )
+
         return False, ""
 
     def run(self) -> None:
@@ -63,6 +78,7 @@ class TalkHeadMiner:
 
         try:
             while True:
+                self.metagraph.sync(subtensor=self.subtensor)
                 time.sleep(12)
         except KeyboardInterrupt:
             bt.logging.info("Miner stopped by user")
