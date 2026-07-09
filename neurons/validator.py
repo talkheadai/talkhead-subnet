@@ -357,8 +357,7 @@ class Validator:
             try:
                 uid = self.metagraph.hotkeys.index(hotkey)
             except ValueError:
-                uid = -1
-                # continue
+                continue
             metrics = metric.get("metrics")
             if metrics is not None:
                 if metrics.get("error") is not None:
