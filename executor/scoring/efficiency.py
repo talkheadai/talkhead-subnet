@@ -14,12 +14,12 @@ is 0.0 so quality-only scoring remains backward compatible.
 
 from __future__ import annotations
 
-MAX_VRAM_GB = 10
+MAX_VRAM_GB = 16
 MAX_INFERENCE_TIME_SEC = 60
 CAP_PENALTY_SCORE = 0.01
-TIME_REF_SEC = 30
-VRAM_REF_GB = 8
-TIE_QUALITY_EPSILON = 1e-5
+TIME_REF_SEC = 120
+VRAM_REF_GB = 32
+TIE_QUALITY_EPSILON = 1e-4
 
 import math
 from dataclasses import dataclass

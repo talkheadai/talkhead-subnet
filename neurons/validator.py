@@ -4,6 +4,8 @@ import math
 import os
 import sys
 import time
+from functools import cmp_to_key
+
 import bittensor as bt
 import numpy as np
 import wandb
@@ -15,6 +17,7 @@ from executor.challenges.celebahq import ensure_celebahq_dataset
 from executor.challenges.librispeech import ensure_librispeech_dataset
 from executor.loop import EvaluationLoop
 from executor.models import MinerSubmission
+from executor.scoring.efficiency import EfficiencyConfig, should_prefer_candidate_a
 from executor.state import MinerState
 from talkhead.protocol import ImageRef
 from talkhead.constant import NETUID, BURN_UID, BURN_RATIO
@@ -56,8 +59,6 @@ class Validator:
             bt.logging.warning(f"Burn UID out of range: {self.burn_uid}")
             self.burn_uid = BURN_UID
         self._winner_uid: int | None = None
-        self._metrics_etag: str | None = ""
-        self._metrics_cache: list[dict] | None = None
 
         self._miner_state = MinerState(state_file=STATE_FILE)
         if not os.getenv("CHALLENGES_DIR", "").strip():
@@ -102,7 +103,8 @@ class Validator:
 
     @staticmethod
     def _pick_winner(metrics_list: list[dict]) -> tuple[str, float] | None:
-        valid: list[tuple[str, float]] = []
+        cfg = EfficiencyConfig.from_env()
+        valid: list[tuple[str, float, float | None, float | None]] = []
         for row in metrics_list:
             if not isinstance(row, dict):
                 continue
@@ -120,11 +122,51 @@ class Validator:
                 continue
             if not math.isfinite(final_score):
                 continue
-            valid.append((hotkey, final_score))
+
+            infer_sec: float | None = None
+            peak_vram: float | None = None
+            efficiency = metrics.get("efficiency")
+            if isinstance(efficiency, dict):
+                raw_infer = efficiency.get("inference_time_sec")
+                raw_vram = efficiency.get("peak_vram_gb")
+                if isinstance(raw_infer, (int, float)) and math.isfinite(raw_infer):
+                    infer_sec = float(raw_infer)
+                if isinstance(raw_vram, (int, float)) and math.isfinite(raw_vram):
+                    peak_vram = float(raw_vram)
+
+            valid.append((hotkey, final_score, infer_sec, peak_vram))
 
         if not valid:
             return None
-        return max(valid, key=lambda item: item[1])
+
+        def _prefer(
+            a: tuple[str, float, float | None, float | None],
+            b: tuple[str, float, float | None, float | None],
+        ) -> int:
+            if should_prefer_candidate_a(
+                score_a=a[1],
+                score_b=b[1],
+                infer_sec_a=a[2],
+                infer_sec_b=b[2],
+                peak_vram_a=a[3],
+                peak_vram_b=b[3],
+                cfg=cfg,
+            ):
+                return 1
+            if should_prefer_candidate_a(
+                score_a=b[1],
+                score_b=a[1],
+                infer_sec_a=b[2],
+                infer_sec_b=a[2],
+                peak_vram_a=b[3],
+                peak_vram_b=a[3],
+                cfg=cfg,
+            ):
+                return -1
+            return 0
+
+        winner = max(valid, key=cmp_to_key(_prefer))
+        return winner[0], winner[1]
 
     def _sync_and_get_current_block(self) -> int:
         self.metagraph.sync(subtensor=self.subtensor)
@@ -160,7 +202,6 @@ class Validator:
             bt.logging.warning(f"UID {uid} ({hotkey}): missing or invalid image_ref")
             return None
 
-        bt.logging.debug(f"UID {uid} ({hotkey}): {image_ref}")
         return {"hotkey": hotkey, "image_ref": image_ref}
 
     def collect_miner_digests(self) -> list[dict[str, str]]:
@@ -233,48 +274,31 @@ class Validator:
         bt.logging.info(f"Updated {len(submissions)} miner submissions in executor state")
 
     def _weight_setting_step(self) -> None:
-        keep_latest_weights = False
-        metrics_rows, etag = self._miner_state.list_metrics_with_etag()
+        metrics_rows = self._miner_state.list_metrics()
+        metrics_list = [row.model_dump() for row in metrics_rows]
+        if not metrics_list:
+            bt.logging.info("No metrics available; burning all")
+            self._set_burn_only_weights()
+            return
 
-        if self._metrics_etag and etag == self._metrics_etag:
-            if self._metrics_cache is None:
-                bt.logging.warning(
-                    "Metrics unchanged but no cached rows; burning all"
-                )
-                self._set_burn_only_weights()
-                return
-            bt.logging.info("Metrics unchanged; keeping latest weights")
-            keep_latest_weights = True
-        else:
-            self._metrics_etag = etag
-            metrics_list = [row.model_dump() for row in metrics_rows]
-            if isinstance(metrics_list, list):
-                self._metrics_cache = metrics_list
+        self.do_logging(metrics_list)
+        winner = self._pick_winner(metrics_list)
+        if winner is None:
+            bt.logging.warning("All metrics invalid; burning all")
+            self._set_burn_only_weights()
+            return
+        winner_hotkey, _ = winner
 
-        if not keep_latest_weights:
-            metrics_list = [row.model_dump() for row in metrics_rows]
-            if not isinstance(metrics_list, list) or len(metrics_list) == 0:
-                bt.logging.info("No metrics available; burning all")
-                self._set_burn_only_weights()
-                return
-            self.do_logging(metrics_list)
-            winner = self._pick_winner(metrics_list)
-            if winner is None:
-                bt.logging.warning("All metrics invalid; burning all")
-                self._set_burn_only_weights()
-                return
-            winner_hotkey, _ = winner
+        self.metagraph.sync(subtensor=self.subtensor)
+        if winner_hotkey not in self.metagraph.hotkeys:
+            bt.logging.warning(
+                f"Winner hotkey not found in metagraph: {winner_hotkey} | Burning all"
+            )
+            self._set_burn_only_weights()
+            return
 
-            self.metagraph.sync(subtensor=self.subtensor)
-            if winner_hotkey not in self.metagraph.hotkeys:
-                bt.logging.warning(
-                    f"Winner hotkey not found in metagraph: {winner_hotkey} | Burning all"
-                )
-                self._set_burn_only_weights()
-                return
-
-            self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
-            bt.logging.info(f"Winner is Miner {self._winner_uid} | {winner_hotkey}")
+        self._winner_uid = self.metagraph.hotkeys.index(winner_hotkey)
+        bt.logging.info(f"Winner is Miner {self._winner_uid} | {winner_hotkey}")
 
         if self._winner_uid is None:
             bt.logging.warning("No winner found; burning all")
@@ -333,12 +357,13 @@ class Validator:
             try:
                 uid = self.metagraph.hotkeys.index(hotkey)
             except ValueError:
-                continue
+                uid = -1
+                # continue
             metrics = metric.get("metrics")
             if metrics is not None:
                 if metrics.get("error") is not None:
                     bt.logging.warning(
-                        f"Invalid submission for hotkey {hotkey}: {metrics.get('error')}"
+                        f"Invalid submission for Miner {uid} | {hotkey}: {metrics.get('error')}"
                     )
                     continue
                 efficiency = metrics.get("efficiency", {})
@@ -350,7 +375,7 @@ class Validator:
                         efficiency.get("inference_time_sec", 0.0), 2
                     )
                 except Exception as e:
-                    bt.logging.warning(f"Failed to parse metrics for hotkey {hotkey}: {e}")
+                    bt.logging.warning(f"Failed to parse metrics for Miner {uid} | {hotkey}: {e}")
                     continue
                 bt.logging.info(
                     f"Metrics for Miner {uid} | {hotkey}: Final Score {final_score} | "
