@@ -145,6 +145,7 @@ Optional tuning via environment variables:
 - `CELEBAHQ_DATA_DIR` — local CelebAHQ face cache (default: `validator-data/celebahq`)
 - `LIBRISPEECH_DATA_DIR` — local LibriSpeech audio cache (default: `validator-data/librispeech`)
 - `CHALLENGES_DIR` — use local challenge fixtures instead of CelebAHQ/LibriSpeech
+- `HF_TOKEN` — Hugging Face token for authenticated dataset downloads (higher rate limits)
 
 
 

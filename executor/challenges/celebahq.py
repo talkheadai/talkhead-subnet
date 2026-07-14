@@ -7,6 +7,8 @@ from pathlib import Path
 
 from loguru import logger
 
+from executor.challenges.hf import configure_hf_auth
+
 CELEBAHQ_DATASET_ID = "edgarcancinoe/celebahq_512_id_clusters"
 DEFAULT_CELEBAHQ_DATA_DIR = "validator-data/celebahq"
 
@@ -62,6 +64,7 @@ def ensure_celebahq_dataset() -> Path:
         return faces_dir
 
     os.environ.setdefault("HF_DATASETS_DISABLE_PROGRESS_BARS", "1")
+    token = configure_hf_auth()
 
     from datasets import load_dataset
 
@@ -70,7 +73,7 @@ def ensure_celebahq_dataset() -> Path:
     faces_dir.mkdir(parents=True, exist_ok=True)
 
     logger.info(f"downloading celebahq dataset: {CELEBAHQ_DATASET_ID}")
-    dataset = load_dataset(CELEBAHQ_DATASET_ID, split="train")
+    dataset = load_dataset(CELEBAHQ_DATASET_ID, split="train", token=token)
     total = len(dataset)
 
     extracted = 0

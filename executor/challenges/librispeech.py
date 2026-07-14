@@ -12,6 +12,8 @@ import numpy as np
 from huggingface_hub import snapshot_download
 from loguru import logger
 
+from executor.challenges.hf import configure_hf_auth, resolve_hf_token
+
 LIBRISPEECH_DATASET_ID = "openslr/librispeech_asr"
 LIBRISPEECH_CONFIG = "clean"
 LIBRISPEECH_SPLIT = "train.100"
@@ -69,6 +71,7 @@ def _download_train_100_snapshot() -> Path:
         LIBRISPEECH_DATASET_ID,
         repo_type="dataset",
         allow_patterns=[LIBRISPEECH_PARQUET_GLOB],
+        token=resolve_hf_token(),
     )
     parquet_files = sorted(glob.glob(f"{snapshot_path}/{LIBRISPEECH_PARQUET_GLOB}"))
     if not parquet_files:
@@ -129,6 +132,7 @@ def ensure_librispeech_dataset() -> Path:
         return audio_dir
 
     os.environ.setdefault("HF_DATASETS_DISABLE_PROGRESS_BARS", "1")
+    token = configure_hf_auth()
 
     from datasets import load_dataset
 
@@ -147,6 +151,7 @@ def ensure_librispeech_dataset() -> Path:
         data_files={"train": parquet_files},
         split="train",
         cache_dir=str(root / "parquet-cache"),
+        token=token,
     )
     total = len(dataset)
 
