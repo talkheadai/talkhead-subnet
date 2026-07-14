@@ -12,6 +12,25 @@ WANDB_MAX_RUN_AGE_DAYS = 1
 EVENTS_LEVEL_NUM = 38
 DEFAULT_LOG_BACKUP_COUNT = 10
 
+
+def exclude_stderr_from_wandb() -> None:
+    """Keep W&B console logs aligned with PM2 *-out.log (stdout / bt.logging).
+
+    Executor loguru writes to stderr (PM2 *-error.log). W&B wraps both streams
+    by default; uninstall stderr capture so only stdout reaches W&B.
+    """
+    run = wandb.run
+    if run is None:
+        return
+    err_redir = getattr(run, "_err_redir", None)
+    if err_redir is None:
+        return
+    try:
+        err_redir.uninstall()
+    except Exception as e:
+        bt.logging.debug(f"Failed to detach W&B stderr capture: {e}")
+
+
 def maybe_reset_wandb(validator):
     if validator.config.wandb.off or wandb.run is None:
         return
