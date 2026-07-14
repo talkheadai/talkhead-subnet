@@ -18,6 +18,8 @@ TalkHead is a subnet where miners advertise Dockerized talking-head models on th
 - The executor runs **in-process** inside the validator: a background thread pulls miner Docker images, scores them, and stores results in local SQLite state.
 - Validators read scores from that state and set on-chain weights.
 
+
+
 ## How it works
 
 End-to-end pipeline:
@@ -29,7 +31,11 @@ End-to-end pipeline:
 5. Validator reads metrics from executor state
 6. Validator sets weights on chain
 
+
+
 ## How to Run
+
+
 
 ### Requirements
 
@@ -39,6 +45,8 @@ End-to-end pipeline:
 - A registered Bittensor wallet + hotkey
 - Hugging Face access for CelebAHQ + LibriSpeech dataset downloads (validators), or a local `CHALLENGES_DIR` for offline testing
 - A published miner image digest in `repo@sha256:...` format
+
+
 
 ### Setup
 
@@ -64,6 +72,15 @@ pip install -e ".[miner]"
 python -m venv .venv-validator
 source .venv-validator/bin/activate
 pip install -e ".[validator]"
+```
+
+Install and configure NVIDIA Container Toolkit
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
 ```
 
 Set the required values in `.env`:
@@ -92,6 +109,8 @@ python -m neurons.miner --image-ref your-registry/your-image@sha256:...
 
 > [!NOTE]
 > Validators enforce a **4-day resubmission cooldown** per hotkey. If a miner advertises a new `image_ref` on its axon within 4 days of the last accepted update, the validator keeps the previous digest in executor state until the cooldown expires. Change `RESUBMIT_COOLDOWN_DAYS` in `talkhead/constant.py` to adjust this window.
+
+
 
 ### Run Validator
 
@@ -126,6 +145,8 @@ Optional tuning via environment variables:
 - `CELEBAHQ_DATA_DIR` — local CelebAHQ face cache (default: `validator-data/celebahq`)
 - `LIBRISPEECH_DATA_DIR` — local LibriSpeech audio cache (default: `validator-data/librispeech`)
 - `CHALLENGES_DIR` — use local challenge fixtures instead of CelebAHQ/LibriSpeech
+
+
 
 ## Executor and Scoring
 
@@ -181,3 +202,4 @@ Winner-take-all policy:
 - Burn allocation is defined by `BURN_RATIO` in `talkhead/constant.py`.
 
 > **Note:** `executor/app.py` (standalone HTTP server) is deprecated. Run `python -m neurons.validator` instead.
+
