@@ -25,7 +25,7 @@ End-to-end pipeline:
 1. Miner serves `ImageRef` on its axon (image digest pinned with `@sha256:`)
 2. Validator queries serving miner axons for `ImageRef` responses
 3. Validator upserts collected digests into in-process executor state
-4. Executor background thread fetches challenges (Pexels faces + Freesound speech audio), runs Docker evaluation, and writes scores
+4. Executor background thread builds challenges (CelebAHQ faces + LibriSpeech speech audio), runs Docker evaluation, and writes scores
 5. Validator reads metrics from executor state
 6. Validator sets weights on chain
 
@@ -35,8 +35,9 @@ End-to-end pipeline:
 
 - Python 3.11+
 - Docker with GPU support (validators)
+- `ffmpeg` installed on the host and available on `PATH` (validators; used for audio/video decoding during scoring)
 - A registered Bittensor wallet + hotkey
-- Pexels and Freesound API keys (validators), or a local `CHALLENGES_DIR` for offline testing
+- Hugging Face access for CelebAHQ + LibriSpeech dataset downloads (validators), or a local `CHALLENGES_DIR` for offline testing
 - A published miner image digest in `repo@sha256:...` format
 
 ### Setup
@@ -65,17 +66,9 @@ source .venv-validator/bin/activate
 pip install -e ".[validator]"
 ```
 
-To install both apps in one environment:
-
-```bash
-pip install -e ".[miner,validator]"
-```
-
 Set the required values in `.env`:
 
 - `IMAGE_REF` — miner's published Docker image digest in `repo@sha256:...` format
-- `PEXELS_API_KEY` — portrait photos for evaluation challenges (validators)
-- `FREESOUND_API_KEY` — speech/voice audio clips for evaluation challenges (validators)
 - `STATE_FILE` — SQLite path for executor state (default: `./state.db`)
 
 Wallet, network, and netuid are configured via standard Bittensor CLI flags (e.g. `--wallet.name`, `--wallet.hotkey`, `--subtensor.network`, `--netuid`).
@@ -111,8 +104,6 @@ A background evaluation thread handles Docker scoring while the main loop handle
 
 ```bash
 source .venv-validator/bin/activate
-export PEXELS_API_KEY=your-pexels-key
-export FREESOUND_API_KEY=your-freesound-key
 export WANDB_API_KEY=your-wandb-api-key
 python -m neurons.validator
 ```
@@ -132,7 +123,9 @@ Optional tuning via environment variables:
 - `MINER_QUERY_BATCH_SIZE` — axon queries per batch (default: `16`)
 - `MINER_QUERY_TIMEOUT` — seconds to wait per axon query (default: `12`)
 - `CHALLENGE_COUNT` — challenges per evaluation round (default: `7`)
-- `CHALLENGES_DIR` — use local challenge fixtures instead of Pexels/Freesound APIs
+- `CELEBAHQ_DATA_DIR` — local CelebAHQ face cache (default: `validator-data/celebahq`)
+- `LIBRISPEECH_DATA_DIR` — local LibriSpeech audio cache (default: `validator-data/librispeech`)
+- `CHALLENGES_DIR` — use local challenge fixtures instead of CelebAHQ/LibriSpeech
 
 ## Executor and Scoring
 
@@ -153,7 +146,7 @@ Execution mechanics:
 
 Challenge generation:
 
-- Default: `ChallengeLoader` fetches portrait photos from **Pexels** and filters Freesound results for human speech (`tag:speech`, `tag:english`, `avg_rating >= 4`, blocked robot/alien/crowd tags). Set `FREESOUND_SOUND_IDS` for a fixed vetted clip pool.
+- Default: `ChallengeLoader` pairs random **CelebAHQ** face images (`edgarcancinoe/celebahq_512_id_clusters`) with random **LibriSpeech** clean/`train.100` clips (`openslr/librispeech_asr`, ~3–10s WAV). On first validator start, datasets are downloaded from Hugging Face into `CELEBAHQ_DATA_DIR` / `LIBRISPEECH_DATA_DIR` and reused thereafter.
 - Offline/dev: set `CHALLENGES_DIR` to a directory of `face.png` + `audio.wav` subfolders.
 
 Evaluation is standardized across miners:
