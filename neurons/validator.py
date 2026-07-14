@@ -22,7 +22,7 @@ from executor.state import MinerState
 from talkhead.protocol import ImageRef
 from talkhead.constant import NETUID, BURN_UID, BURN_RATIO
 from utils import __version__
-from utils.logging import maybe_reset_wandb
+from utils.logging import exclude_stderr_from_wandb, maybe_reset_wandb
 from utils.git import check_and_update_code
 
 load_dotenv()
@@ -96,6 +96,8 @@ class Validator:
             bt.logging.error(f"Failed to initialize W&B run: {e}")
             self.config.wandb.off = True
             return
+
+        exclude_stderr_from_wandb()
 
         self._wandb_start_date = datetime.now(timezone.utc).date()
 
