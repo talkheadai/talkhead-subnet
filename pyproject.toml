@@ -15,11 +15,30 @@ authors = [
 dependencies = [
     "bittensor==10.2.0",
     "python-dotenv==1.2.2",
-    "wandb==0.19.0",
     "async-substrate-interface==1.6.4",
 ]
 
 [project.optional-dependencies]
+miner = []
+validator = [
+    "wandb==0.19.0",
+    "httpx==0.28.1",
+    "pydantic==2.13.4",
+    "python-dotenv==1.2.2",
+    "loguru==0.7.3",
+    "numpy==2.2.6",
+    "opencv-python==5.0.0.93",
+    "opencv-python-headless==5.0.0.93",
+    "torch==2.12.1",
+    "torchaudio==2.11.0",
+    "torchcodec==0.14.0",
+    "insightface==1.0.1",
+    "onnxruntime==1.23.2",
+    "openai-whisper==20250625",
+    "datasets==5.0.0",
+    "huggingface_hub==1.23.0",
+    "boto3==1.43.47",
+]
 dev = ["pytest==9.0.1"]
 
 [project.urls]
@@ -32,4 +51,4 @@ py-modules = ["config", "utils"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["neurons*"]
+include = ["neurons*", "talkhead*", "executor*"]

@@ -11,58 +11,93 @@
 
 ## Overview
 
-TalkHead is a subnet where miners submit Dockerized talking-head models, and validators evaluate them in a secure GPU executor to rank performance and set weights.
+TalkHead is a subnet where miners advertise Dockerized talking-head models on their axons, and validators evaluate them locally to rank performance and set weights.
 
-- Miners submit Docker image digests that identify model runtime containers.
-- Model evaluation is performed externally by an executor service.
-- Validators coordinate submission updates, scoring intake, and on-chain weight setting.
+- Miners serve an immutable Docker image digest (`repo@sha256:...`) on their Bittensor axon via the `ImageRef` synapse.
+- Validators discover registrations by querying miner axons directly through the metagraph.
+- The executor runs **in-process** inside the validator: a background thread pulls miner Docker images, scores them, and stores results in local SQLite state.
+- Validators read scores from that state and set on-chain weights.
+
+
 
 ## How it works
 
 End-to-end pipeline:
 
-1. Miner -> Subnet API (`/submit`)
-2. Validator -> Subnet API (`/submissions`)
-3. Validator -> Executor (`/update`)
-4. Executor evaluates submitted images
-5. Executor provides scores
+1. Miner serves `ImageRef` on its axon (image digest pinned with `@sha256:`)
+2. Validator queries serving miner axons for `ImageRef` responses
+3. Validator upserts collected digests into in-process executor state
+4. Executor background thread builds challenges (CelebAHQ faces + LibriSpeech speech audio), runs Docker evaluation, and writes scores
+5. Validator reads metrics from executor state
 6. Validator sets weights on chain
 
+
+
 ## How to Run
+
+
 
 ### Requirements
 
 - Python 3.11+
+- Docker with GPU support (validators)
+- `ffmpeg` installed on the host and available on `PATH` (validators; used for audio/video decoding during scoring)
 - A registered Bittensor wallet + hotkey
-- Access to the subnet API and executor endpoints
+- Hugging Face access for CelebAHQ + LibriSpeech dataset downloads (validators), or a local `CHALLENGES_DIR` for offline testing
 - A published miner image digest in `repo@sha256:...` format
+
+
 
 ### Setup
 
-Install the project and create a local environment file:
+Miner and validator use separate Python environments, both installed from the same `pyproject.toml` via optional dependency groups.
+
+Create a local environment file:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
 cp .env.example .env
+```
+
+**Miner environment** (base dependencies only):
+
+```bash
+python -m venv .venv-miner
+source .venv-miner/bin/activate
+pip install -e ".[miner]"
+```
+
+**Validator environment** (base + executor/scoring dependencies):
+
+```bash
+python -m venv .venv-validator
+source .venv-validator/bin/activate
+pip install -e ".[validator]"
+```
+
+Install and configure NVIDIA Container Toolkit
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
 ```
 
 Set the required values in `.env`:
 
-- `WALLET_NAME` and `HOTKEY_NAME` for the registered wallet/hotkey
-- `NETWORK` and `NETUID` for the target subnet
-- `SUBNET_API_URL` for the coordination API
-- `EXECUTOR_API_URL` for the executor API used by the validator
-- `IMAGE_REF` for the miner's published Docker image digest in `repo@sha256:...` format
+- `IMAGE_REF` — miner's published Docker image digest in `repo@sha256:...` format
+- `STATE_FILE` — SQLite path for executor state (default: `./state.db`)
+
+Wallet, network, and netuid are configured via standard Bittensor CLI flags (e.g. `--wallet.name`, `--wallet.hotkey`, `--subtensor.network`, `--netuid`).
 
 ### Run Miner
 
-The miner is submission-only. It sends the configured Docker image digest to the subnet API.
+The miner runs an axon that responds to validator `ImageRef` queries with the configured Docker image digest. Update your model by changing `IMAGE_REF` (or `--image-ref`) and restarting the miner.
 
 You can use the [talkheadai/talkhead-miner-image](https://github.com/talkheadai/talkhead-miner-image) repository as a base Docker image/template for your miner container.
 
 ```bash
+source .venv-miner/bin/activate
 python -m neurons.miner
 ```
 
@@ -73,18 +108,21 @@ python -m neurons.miner --image-ref your-registry/your-image@sha256:...
 ```
 
 > [!NOTE]
-> Every hotkey, including blacklisted hotkeys, can submit again after four days. Submitting again sooner returns HTTP **429** (Too Many Requests) from the subnet API.
+> Validators enforce a **4-day resubmission cooldown** per hotkey. If a miner advertises a new `image_ref` on its axon within 4 days of the last accepted update, the validator keeps the previous digest in executor state until the cooldown expires. Change `RESUBMIT_COOLDOWN_DAYS` in `talkhead/constant.py` to adjust this window.
+
+
 
 ### Run Validator
 
-The validator continuously:
+The validator runs the executor in-process and continuously:
 
-1. Pulls miner submissions from the subnet API and forwards them to the executor
-2. Reads executor metrics and sets on-chain weights
+1. Queries serving miner axons for `ImageRef` digests and upserts them into executor state
+2. Reads executor metrics from local state and sets on-chain weights
 
-Start it with:
+A background evaluation thread handles Docker scoring while the main loop handles axon queries and weight setting.
 
 ```bash
+source .venv-validator/bin/activate
 export WANDB_API_KEY=your-wandb-api-key
 python -m neurons.validator
 ```
@@ -99,16 +137,27 @@ python -m neurons.validator \
   --netuid 108
 ```
 
+Optional tuning via environment variables:
+
+- `MINER_QUERY_BATCH_SIZE` — axon queries per batch (default: `16`)
+- `MINER_QUERY_TIMEOUT` — seconds to wait per axon query (default: `12`)
+- `CHALLENGE_COUNT` — challenges per evaluation round (default: `7`)
+- `CELEBAHQ_DATA_DIR` — local CelebAHQ face cache (default: `validator-data/celebahq`)
+- `LIBRISPEECH_DATA_DIR` — local LibriSpeech audio cache (default: `validator-data/librispeech`)
+- `CHALLENGES_DIR` — use local challenge fixtures instead of CelebAHQ/LibriSpeech
+
+
+
 ## Executor and Scoring
 
-Github repo => [talkheadai/talkhead-executor](https://github.com/talkheadai/talkhead-executor)
+The `executor/` package lives in this repo and is embedded in the validator process.
 
 The executor handles model evaluation:
 
 - Pulls miner Docker images.
 - Runs images in a sandboxed environment.
 - Sends challenge inputs and captures outputs.
-- Measures performance and updates a score table.
+- Measures performance and updates a score table in SQLite.
 
 Execution mechanics:
 
@@ -116,33 +165,41 @@ Execution mechanics:
 - Warmup runs followed by scoring runs.
 - No blockchain interaction.
 
+Challenge generation:
+
+- Default: `ChallengeLoader` pairs random **CelebAHQ** face images (`edgarcancinoe/celebahq_512_id_clusters`) with random **LibriSpeech** clean/`train.100` clips (`openslr/librispeech_asr`, ~3–10s WAV). On first validator start, datasets are downloaded from Hugging Face into `CELEBAHQ_DATA_DIR` / `LIBRISPEECH_DATA_DIR` and reused thereafter.
+- Offline/dev: set `CHALLENGES_DIR` to a directory of `face.png` + `audio.wav` subfolders.
+
 Evaluation is standardized across miners:
 
-- The executor evaluates all miners on the same challenge set.
+- The executor evaluates all miners on the same challenge set per round.
 - Runs include warmup and scoring phases.
 - Lower latency produces a better score.
 
 Round eligibility and carryover policy:
 
-- Blacklisted submissions and submissions that fail on Docker pull are excluded from the next evaluation round.
+- Submissions that fail on Docker pull are excluded from the next evaluation round.
+- A miner may change its advertised `image_ref` at most once every 4 days per hotkey; earlier changes are ignored by the validator.
 - Each round carries forward only:
   - The top 5 submissions by `final_score`.
   - New submissions received for the next round.
-- This keeps evaluation focused on competitive miners while allowing continued re-entry through the 4-day resubmission window.
 
 Validator behavior is split into two loops:
 
 1. **Submission update loop**
-  - Fetch submissions from the subnet API.
-  - Send updated miner image digests to the executor.
+  - Query serving miners on the metagraph for `ImageRef` digests.
+  - Upsert digests into in-process executor state (`updated_time` set on first sight or when a new digest is accepted).
+  - Reject `image_ref` changes inside the 4-day cooldown (`RESUBMIT_COOLDOWN_DAYS` in `talkhead/constant.py`).
 2. **Weight setting loop**
-  - Fetch scores from the executor.
+  - Read scores from executor state.
   - Compute weights from score results.
   - Set weights on chain.
 
 Winner-take-all policy:
 
 - Highest score wins.
-- Winning miner receives weight.
-- All other miners receive zero.
+- Winning miner receives weight (minus any burn allocation).
+- Burn allocation is defined by `BURN_RATIO` in `talkhead/constant.py`.
+
+> **Note:** `executor/app.py` (standalone HTTP server) is deprecated. Run `python -m neurons.validator` instead.
 
