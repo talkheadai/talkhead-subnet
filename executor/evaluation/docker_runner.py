@@ -220,6 +220,16 @@ def _load_challenges(challenges_dir: str) -> list[Challenge]:
     return challenges
 
 
+def _docker_run_error_message(proc: subprocess.CompletedProcess[str]) -> str:
+    """Short stored error; omit the full docker argv from CalledProcessError."""
+    stderr = (proc.stderr or "").strip()
+    if stderr:
+        logger.warning(
+            f"docker run failed rc={proc.returncode} stderr={stderr[:500]}"
+        )
+    return f"Docker run returned non-zero exit status {proc.returncode}"
+
+
 def pull_image(image_ref: str, timeout_sec: int = PULL_IMAGE_TIMEOUT_SEC) -> bool:
     for attempt in range(1, PULL_IMAGE_MAX_RETRIES + 1):
         try:
@@ -288,7 +298,9 @@ def start_container(image_ref: str, job_dir: str) -> str:
         image_ref,
     ]
 
-    res = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        raise RuntimeError(_docker_run_error_message(res))
     container_id = res.stdout.strip()
     if not container_id:
         raise RuntimeError("docker run did not return a container id")
