@@ -13,9 +13,9 @@ authors = [
   { name = "TalkHead Subnet Team" }
 ]
 dependencies = [
-    "bittensor==10.2.0",
+    "bittensor==10.3.0",
     "python-dotenv==1.2.2",
-    "async-substrate-interface==1.6.4",
+    "async-substrate-interface==2.0.2",
 ]
 
 [project.optional-dependencies]
