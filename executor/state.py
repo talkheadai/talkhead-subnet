@@ -15,6 +15,7 @@ from talkhead.constant import RESUBMIT_COOLDOWN_SEC
 
 ROUND_CONTINUE_TOP_K = 10
 _TERMINAL_ERRORS = frozenset({"Blacklisted", "Docker pull failed"})
+_DOCKER_PULL_FAILED_PREFIX = "Docker pull failed"
 _DROPPED_FINAL_SCORE = 0.0
 
 
@@ -23,6 +24,14 @@ def _metrics_error(metrics: dict[str, Any] | None) -> str | None:
         return None
     raw_err = metrics.get("error")
     return raw_err if isinstance(raw_err, str) else None
+
+
+def _is_terminal_error(err: str | None) -> bool:
+    if not isinstance(err, str):
+        return False
+    if err in _TERMINAL_ERRORS:
+        return True
+    return err.startswith(_DOCKER_PULL_FAILED_PREFIX)
 
 
 def _metrics_final_score(metrics: dict[str, Any] | None) -> float | None:
@@ -325,7 +334,7 @@ class MinerState:
 
                 record.metrics = next_metrics
                 err = _metrics_error(next_metrics)
-                if err in _TERMINAL_ERRORS:
+                if _is_terminal_error(err):
                     record.coming_metrics = next_metrics
                     continue
 
@@ -348,7 +357,7 @@ class MinerState:
                 metrics = record.metrics
                 if not isinstance(metrics, dict):
                     continue
-                if _metrics_error(metrics) in _TERMINAL_ERRORS:
+                if _is_terminal_error(_metrics_error(metrics)):
                     continue
 
                 round_score = _metrics_final_score(metrics)
