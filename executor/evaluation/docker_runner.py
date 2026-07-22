@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -220,6 +221,21 @@ def _load_challenges(challenges_dir: str) -> list[Challenge]:
     return challenges
 
 
+_DIGEST_RE = re.compile(r"@?sha256:[0-9a-fA-F]{64}")
+
+
+def _sanitize_docker_error(text: str, *, image_ref: str | None = None) -> str:
+    """Keep a useful pull/run reason without leaking image digests or refs."""
+    out = " ".join((text or "").split())
+    if image_ref:
+        out = out.replace(image_ref, "<image>")
+        repo = image_ref.split("@", 1)[0].strip()
+        if repo:
+            out = out.replace(repo, "<image>")
+    out = _DIGEST_RE.sub("sha256:<digest>", out)
+    return out[:300] if out else "unknown error"
+
+
 def _docker_run_error_message(proc: subprocess.CompletedProcess[str]) -> str:
     """Short stored error; omit the full docker argv from CalledProcessError."""
     stderr = (proc.stderr or "").strip()
@@ -230,32 +246,50 @@ def _docker_run_error_message(proc: subprocess.CompletedProcess[str]) -> str:
     return f"Docker run returned non-zero exit status {proc.returncode}"
 
 
-def pull_image(image_ref: str, timeout_sec: int = PULL_IMAGE_TIMEOUT_SEC) -> bool:
+def pull_image(
+    image_ref: str, timeout_sec: int = PULL_IMAGE_TIMEOUT_SEC
+) -> tuple[bool, str | None]:
+    last_detail = "unknown error"
     for attempt in range(1, PULL_IMAGE_MAX_RETRIES + 1):
         try:
-            subprocess.run(
+            res = subprocess.run(
                 ["docker", "pull", image_ref],
-                check=True,
+                check=False,
                 timeout=timeout_sec,
                 capture_output=True,
                 text=True,
             )
-            if attempt > 1:
-                logger.info(
-                    f"docker pull succeeded on retry {attempt}/{PULL_IMAGE_MAX_RETRIES}: {image_ref}"
-                )
-            return True
+            if res.returncode == 0:
+                if attempt > 1:
+                    logger.info(
+                        f"docker pull succeeded on retry {attempt}/{PULL_IMAGE_MAX_RETRIES}: "
+                        f"{image_ref}"
+                    )
+                return True, None
+            raw = (res.stderr or res.stdout or "").strip() or f"exit status {res.returncode}"
+            last_detail = _sanitize_docker_error(raw, image_ref=image_ref)
+            logger.warning(
+                f"docker pull failed attempt {attempt}/{PULL_IMAGE_MAX_RETRIES} "
+                f"for image={image_ref}: {raw[:500]}"
+            )
+        except subprocess.TimeoutExpired:
+            last_detail = f"timed out after {timeout_sec}s"
+            logger.warning(
+                f"docker pull timed out attempt {attempt}/{PULL_IMAGE_MAX_RETRIES} "
+                f"for image={image_ref} timeout_sec={timeout_sec}"
+            )
         except Exception as exc:
+            last_detail = _sanitize_docker_error(str(exc), image_ref=image_ref)
             logger.warning(
                 f"docker pull failed attempt {attempt}/{PULL_IMAGE_MAX_RETRIES} "
                 f"for image={image_ref}: {exc}"
             )
-            if attempt < PULL_IMAGE_MAX_RETRIES:
-                time.sleep(PULL_IMAGE_RETRY_SLEEP_SEC)
+        if attempt < PULL_IMAGE_MAX_RETRIES:
+            time.sleep(PULL_IMAGE_RETRY_SLEEP_SEC)
     logger.error(
         f"docker pull failed after {PULL_IMAGE_MAX_RETRIES} attempts: {image_ref}"
     )
-    return False
+    return False, last_detail
 
 
 def start_container(image_ref: str, job_dir: str) -> str:
@@ -513,8 +547,12 @@ def evaluate(image_ref: str, challenges: list[Challenge]) -> tuple[float, dict]:
     eff_cfg = EfficiencyConfig.from_env()
     try:
         logger.info(f"pulling image: {image_ref}")
-        if not pull_image(image_ref):
-            return 0.0, {"error": "Docker pull failed"}
+        pulled, pull_detail = pull_image(image_ref)
+        if not pulled:
+            err = "Docker pull failed"
+            if pull_detail:
+                err = f"{err}: {pull_detail}"
+            return 0.0, {"error": err}
         container_id = start_container(image_ref, str(job_dir))
         with _ACTIVE_CONTAINERS_LOCK:
             _ACTIVE_CONTAINERS.add(container_id)
