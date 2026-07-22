@@ -10,7 +10,7 @@ from config import config, load_app_config
 from talkhead.protocol import ImageRef
 from talkhead.constant import NETUID
 
-MIN_ALPHA_STAKE = 10_000
+MIN_STAKE = 10_000
 
 
 def _resolve_image_ref(cli_image_ref: str | None, cfg_image_ref: str) -> str:
@@ -45,10 +45,10 @@ class TalkHeadMiner:
         except ValueError:
             return True, f"Unregistered hotkey: {hotkey}"
 
-        alpha_stake = float(self.metagraph.alpha_stake[uid])
-        if alpha_stake < MIN_ALPHA_STAKE:
+        stake = float(self.metagraph.S[uid])
+        if stake < MIN_STAKE:
             return True, (
-                f"Alpha stake {alpha_stake:.4g} below minimum {MIN_ALPHA_STAKE}"
+                f"Stake {stake:.4g} below minimum {MIN_STAKE}"
             )
 
         return False, ""
